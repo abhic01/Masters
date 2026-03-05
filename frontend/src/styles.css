@@ -5,6 +5,7 @@
   --muted: #aeb7c2;
   --border: #242834;
   --accent: #4ea1ff;
+  --danger: #ff5b5b;
 }
 
 * { box-sizing: border-box; }
@@ -15,23 +16,13 @@ body {
   color: var(--text);
 }
 
-.page {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 18px;
-}
-
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
+.page { max-width: 1280px; margin: 0 auto; padding: 18px; }
+.topbar { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
 h1 { margin: 0; font-size: 26px; }
-.sub { margin: 6px 0 0; color: var(--muted); }
+h2 { margin: 0; font-size: 18px; }
+.muted { color: var(--muted); margin-top: 6px; }
 
+.actions { display: flex; gap: 10px; }
 .btn {
   background: transparent;
   color: var(--text);
@@ -41,13 +32,9 @@ h1 { margin: 0; font-size: 26px; }
   cursor: pointer;
 }
 .btn:hover { border-color: var(--accent); }
+.btn.danger:hover { border-color: var(--danger); }
 
-.grid {
-  display: grid;
-  grid-template-columns: 380px 1fr;
-  gap: 16px;
-  align-items: start;
-}
+.layout { display: grid; grid-template-columns: 420px 1fr; gap: 16px; align-items: start; }
 
 .card {
   background: var(--card);
@@ -56,9 +43,10 @@ h1 { margin: 0; font-size: 26px; }
   padding: 12px;
 }
 
+.cardHeader { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+
 .input {
-  width: 100%;
-  margin-top: 10px;
+  width: 55%;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -68,7 +56,7 @@ h1 { margin: 0; font-size: 26px; }
 
 .list {
   margin-top: 12px;
-  max-height: 560px;
+  max-height: 520px;
   overflow: auto;
   border-top: 1px solid var(--border);
 }
@@ -82,38 +70,90 @@ h1 { margin: 0; font-size: 26px; }
   border-bottom: 1px solid var(--border);
 }
 
-.name { font-weight: 700; }
+.clickable { cursor: pointer; }
+.clickable:hover { background: rgba(78,161,255,0.08); }
+
+.name { font-weight: 800; }
 .meta { font-size: 12px; color: var(--muted); }
-.pts { font-weight: 800; font-size: 16px; }
+.pts { font-weight: 900; font-size: 16px; }
 
-.select {
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: #0f1116;
-  color: var(--text);
+.pill {
+  padding: 6px 10px;
+  border-radius: 999px;
   border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
 }
 
-.teams {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
+.teams { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.teamHeader { display: flex; justify-content: space-between; align-items: baseline; }
+.total { font-weight: 900; color: var(--accent); }
+.empty { padding: 12px 6px; color: var(--muted); }
 
-.teamHeader {
+.picksCard { margin-top: 16px; }
+.picks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; }
+.pick {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  gap: 10px;
 }
-.total { font-weight: 800; color: var(--accent); }
+.pickNo { font-weight: 900; color: var(--accent); }
+.pickName { font-weight: 800; }
+.pickMeta { font-size: 12px; color: var(--muted); }
 
-.empty {
-  padding: 12px 6px;
-  color: var(--muted);
+.clickableName { cursor: pointer; }
+.clickableName:hover { text-decoration: underline; }
+
+.modalBackdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  padding: 18px;
+}
+.modal {
+  width: min(920px, 100%);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+}
+.modalHeader { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.modalTitle { font-weight: 900; font-size: 18px; }
+
+.holes { margin-top: 10px; border-top: 1px solid var(--border); max-height: 60vh; overflow: auto; }
+.holeRow {
+  display: grid;
+  grid-template-columns: 70px 90px 90px 120px 1fr 60px;
+  gap: 10px;
+  padding: 10px 6px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
 }
 
-.footer {
-  margin-top: 14px;
-  color: var(--muted);
-  font-size: 13px;
+/* add/keep these (works with the earlier dark theme) */
+.error {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 91, 91, 0.35);
+  background: rgba(255, 91, 91, 0.10);
+  color: #ffd2d2;
+}
+
+.btn.primary {
+  border-color: rgba(78,161,255,0.55);
+}
+.btn.primary:hover {
+  border-color: rgba(78,161,255,1);
+}
+
+.pillHost {
+  margin-left: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(78,161,255,0.55);
+  color: rgba(78,161,255,1);
+  font-size: 12px;
+  font-weight: 700;
 }

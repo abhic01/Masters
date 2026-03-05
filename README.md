@@ -9,7 +9,7 @@ cd backend
 pip install -r requirements.txt
 uvicorn app:app --reload --port 8000
 
-## Run backend (5173)
+## Run frontend (5173)
 cd frontend
 npm install
 npm run dev

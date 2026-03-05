@@ -1,86 +1,35 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import os
+import random
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-import requests
-from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-load_dotenv()
+from draft import DraftConfig, DraftState
+from providers import StubProvider, PlayerScorecard
 
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 PLAYERS_CSV = os.path.join(APP_ROOT, "players.csv")
 
-app = FastAPI(title="Masters Draft Tracker API")
+app = FastAPI(title="Masters Draft Room API")
 
-# Allow local dev frontend to call backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ----------------------------
-# Draft state (in-memory)
-# ----------------------------
-TEAMS = ["Team A", "Team B", "Team C", "Team D"]
-draft_state: Dict[str, List[Dict[str, Any]]] = {t: [] for t in TEAMS}
-picked_ids: set[str] = set()
-
-# ----------------------------
-# Fantasy scoring rules
-# ----------------------------
-SCORETYPE_POINTS = {
-    "ALBATROSS": 5,
-    "DOUBLE_EAGLE": 5,
-    "EAGLE": 2,
-    "BIRDIE": 1,
-    "PAR": 0,
-    "BOGEY": -1,
-    "DOUBLE_BOGEY": -2,
-    "TRIPLE_BOGEY": -3,
-}
-
-# ----------------------------
-# Utility
-# ----------------------------
-SESSION = requests.Session()
-SESSION.headers.update(
-    {
-        "User-Agent": "masters-draft-tracker/1.0",
-        "Accept": "application/json",
-    }
-)
-
-def read_top_players_csv() -> List[Dict[str, str]]:
-    if not os.path.exists(PLAYERS_CSV):
-        raise HTTPException(status_code=500, detail="players.csv not found in backend folder.")
-
-    out = []
-    with open(PLAYERS_CSV, "r", encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        if "name" not in (r.fieldnames or []):
-            raise HTTPException(status_code=500, detail="players.csv must have a 'name' column.")
-        for row in r:
-            name = (row.get("name") or "").strip()
-            if name:
-                # For now athleteId is a stable slug derived from name (until you wire ESPN IDs)
-                athlete_id = slugify(name)
-                out.append({"athleteId": athlete_id, "name": name})
-    return out
-
+# -------- Draft Pool --------
 def slugify(s: str) -> str:
-    # crude but stable for ids; you can swap this to real ESPN athlete ids later
     return (
         s.strip()
         .lower()
@@ -103,101 +52,296 @@ def slugify(s: str) -> str:
         .replace(" ", "-")
     )
 
-def http_get_json(url: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    r = SESSION.get(url, params=params, timeout=25)
-    if r.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Upstream error {r.status_code} for {url}")
-    return r.json()
+def load_top_players(limit: int = 50) -> List[Dict[str, str]]:
+    if not os.path.exists(PLAYERS_CSV):
+        raise HTTPException(status_code=500, detail="players.csv not found in backend folder.")
+    with open(PLAYERS_CSV, "r", encoding="utf-8") as f:
+        r = csv.DictReader(f)
+        if "name" not in (r.fieldnames or []):
+            raise HTTPException(status_code=500, detail="players.csv must have a 'name' column.")
+        players = []
+        for row in r:
+            name = (row.get("name") or "").strip()
+            if name:
+                players.append({"athleteId": slugify(name), "name": name})
+        return players[:limit]
 
-# ----------------------------
-# ESPN adapter (pluggable)
-# ----------------------------
-# Start with "stubbed" scoring so your draft room works today.
-# Then you can fill these functions with actual Masters hole-by-hole pulling.
-class ESPNAdapter:
-    """
-    Replace implementation when you have confirmed a reliable Masters hole-by-hole source.
-    Keep the response shape the same so the UI doesn't change.
-    """
+DRAFT_POOL = load_top_players(50)
 
-    def get_player_holes(self, athlete_id: str) -> Dict[str, Any]:
-        # STUB: return no holes, 0 points.
-        # Later: map your athlete_id (slug) -> ESPN athleteId, pull scorecard, parse holes.
-        return {
-            "athleteId": athlete_id,
-            "name": athlete_id.replace("-", " ").title(),
-            "holes": [],
-            "fantasyPoints": 0,
+# -------- Live scoring (stub now) --------
+provider = StubProvider()
+scorecards: Dict[str, PlayerScorecard] = {}
+
+# -------- Room state (single room for now) --------
+@dataclass
+class User:
+    user_id: str
+    name: str
+    is_host: bool = False
+
+class Room:
+    def __init__(self):
+        self.users: Dict[str, User] = {}              # user_id -> user
+        self.sockets: Dict[str, WebSocket] = {}       # user_id -> websocket
+        self.draft = DraftState(DraftConfig(roster_size=6, seconds_per_pick=60, snake=True, auto_pick=True))
+        self.draft.reset_for_teams([])
+
+    def host_id(self) -> Optional[str]:
+        for uid, u in self.users.items():
+            if u.is_host:
+                return uid
+        return None
+
+ROOM = Room()
+
+# -------- WebSocket manager --------
+async def broadcast(msg: Dict[str, Any]):
+    dead = []
+    for uid, ws in ROOM.sockets.items():
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            dead.append(uid)
+    for uid in dead:
+        ROOM.sockets.pop(uid, None)
+        ROOM.users.pop(uid, None)
+
+def serialize_room_state() -> Dict[str, Any]:
+    # Users for lobby
+    users = [{"userId": u.user_id, "name": u.name, "isHost": u.is_host} for u in ROOM.users.values()]
+    users.sort(key=lambda x: (not x["isHost"], x["name"].lower()))
+
+    # Draft state
+    d = ROOM.draft
+    return {
+        "users": users,
+        "draft": {
+            "started": d.started,
+            "completed": d.completed,
+            "teams": d.teams,  # in draft order
+            "pickNo": d.pick_no,
+            "totalPicks": d.total_picks,
+            "currentTeam": d.current_team(),
+            "secondsLeft": d.remaining_seconds(),
+            "rosterSize": d.config.roster_size,
+            "secondsPerPick": d.config.seconds_per_pick,
+            "snake": d.config.snake,
+            "autoPick": d.config.auto_pick,
+            "picks": [
+                {"pickNo": p.pick_no, "team": p.team, "athleteId": p.athlete_id, "name": p.name, "ts": p.ts}
+                for p in d.picks
+            ],
+            "rosters": {t: [{"athleteId": aid, "name": nm} for (aid, nm) in d.rosters.get(t, [])] for t in d.teams},
+            "picked": list(d.picked_ids),
         }
+    }
 
-ESPN = ESPNAdapter()
+def serialize_scoreboard() -> Dict[str, Any]:
+    teams_out: Dict[str, Any] = {}
+    for team, roster in ROOM.draft.rosters.items():
+        total = 0
+        players = []
+        for aid, name in roster:
+            sc = scorecards.get(aid)
+            pts = sc.fantasy_points if sc else 0
+            total += pts
+            players.append({"athleteId": aid, "name": name, "fantasyPoints": pts})
+        teams_out[team] = {"total": total, "players": players}
+    return {"teams": teams_out, "updatedTs": time.time()}
 
-# ----------------------------
-# API Models
-# ----------------------------
-class DraftPick(BaseModel):
-    team: str
+# -------- Background loops --------
+async def draft_clock_loop():
+    while True:
+        await asyncio.sleep(1)
+        d = ROOM.draft
+        if not d.started or d.completed:
+            continue
+        if d.remaining_seconds() == 0:
+            if not d.config.auto_pick:
+                d.advance_turn()
+                await broadcast({"type": "room_state", "data": serialize_room_state()})
+                continue
+
+            available = [p for p in DRAFT_POOL if p["athleteId"] not in d.picked_ids]
+            if available:
+                p = available[0]
+                try:
+                    d.make_pick(p["athleteId"], p["name"])
+                except Exception:
+                    d.advance_turn()
+            else:
+                d.advance_turn()
+
+            await broadcast({"type": "room_state", "data": serialize_room_state()})
+
+async def scoring_loop():
+    while True:
+        await asyncio.sleep(5)
+        drafted_ids = list(ROOM.draft.picked_ids)
+        if not drafted_ids:
+            continue
+        try:
+            fetched = provider.fetch_many(drafted_ids)
+            scorecards.update(fetched)
+            await broadcast({"type": "scoreboard", "data": serialize_scoreboard()})
+        except Exception as e:
+            await broadcast({"type": "error", "data": {"message": f"scoring_loop: {e}"}})
+
+@app.on_event("startup")
+async def _startup():
+    asyncio.create_task(draft_clock_loop())
+    asyncio.create_task(scoring_loop())
+
+# -------- REST models/endpoints --------
+class JoinReq(BaseModel):
+    userId: str
+    name: str
+
+class StartDraftReq(BaseModel):
+    userId: str
+    seconds_per_pick: Optional[int] = None
+    roster_size: Optional[int] = None
+    snake: Optional[bool] = None
+    auto_pick: Optional[bool] = None
+
+class MakePickReq(BaseModel):
+    userId: str
     athlete_id: str
-    player_name: str
+    name: str
 
-# ----------------------------
-# API Endpoints
-# ----------------------------
 @app.get("/api/health")
 def health():
     return {"ok": True}
 
 @app.get("/api/field")
-def api_field(limit: int = 50):
-    players = read_top_players_csv()
-    return {"players": players[:limit]}
+def field(limit: int = 50):
+    return {"players": DRAFT_POOL[:limit]}
 
-@app.get("/api/teams")
-def api_teams():
-    return {"teams": TEAMS, "draft": draft_state, "picked": list(picked_ids)}
+@app.post("/api/join")
+async def join(req: JoinReq):
+    # idempotent join/update name
+    if req.userId in ROOM.users:
+        ROOM.users[req.userId].name = req.name.strip()[:30] or "Player"
+    else:
+        ROOM.users[req.userId] = User(user_id=req.userId, name=req.name.strip()[:30] or "Player")
 
-@app.post("/api/draft")
-def api_draft(pick: DraftPick):
-    if pick.team not in draft_state:
-        raise HTTPException(status_code=400, detail="Unknown team.")
-    if pick.athlete_id in picked_ids:
-        raise HTTPException(status_code=409, detail="Player already drafted.")
+    # ensure one host exists
+    if ROOM.host_id() is None:
+        ROOM.users[req.userId].is_host = True
 
-    draft_state[pick.team].append({"athleteId": pick.athlete_id, "name": pick.player_name})
-    picked_ids.add(pick.athlete_id)
-    return {"ok": True, "draft": draft_state}
+    await broadcast({"type": "room_state", "data": serialize_room_state()})
+    return serialize_room_state()
+
+@app.get("/api/state")
+def state():
+    return serialize_room_state()
+
+@app.post("/api/draft/start")
+async def start_draft(req: StartDraftReq):
+    u = ROOM.users.get(req.userId)
+    if not u:
+        raise HTTPException(status_code=401, detail="Join first.")
+    if not u.is_host:
+        raise HTTPException(status_code=403, detail="Only host can start the draft.")
+    if len(ROOM.users) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 players to start.")
+
+    # apply config
+    if req.seconds_per_pick is not None:
+        ROOM.draft.config.seconds_per_pick = int(req.seconds_per_pick)
+    if req.roster_size is not None:
+        ROOM.draft.config.roster_size = int(req.roster_size)
+    if req.snake is not None:
+        ROOM.draft.config.snake = bool(req.snake)
+    if req.auto_pick is not None:
+        ROOM.draft.config.auto_pick = bool(req.auto_pick)
+
+    # randomize order
+    names = [usr.name for usr in ROOM.users.values()]
+    random.shuffle(names)
+
+    ROOM.draft.reset_for_teams(names)
+    ROOM.draft.start()
+
+    await broadcast({"type": "room_state", "data": serialize_room_state()})
+    return serialize_room_state()
+
+@app.post("/api/draft/reset")
+async def reset_draft(req: StartDraftReq):
+    u = ROOM.users.get(req.userId)
+    if not u or not u.is_host:
+        raise HTTPException(status_code=403, detail="Only host can reset.")
+    ROOM.draft.reset_for_teams([])
+    await broadcast({"type": "room_state", "data": serialize_room_state()})
+    return serialize_room_state()
+
+@app.post("/api/draft/pick")
+async def make_pick(req: MakePickReq):
+    u = ROOM.users.get(req.userId)
+    if not u:
+        raise HTTPException(status_code=401, detail="Join first.")
+
+    d = ROOM.draft
+    if not d.started or d.completed:
+        raise HTTPException(status_code=400, detail="Draft not active.")
+
+    # Only the user whose NAME matches the current team can pick
+    if d.current_team() != u.name:
+        raise HTTPException(status_code=403, detail=f"Not your turn. On the clock: {d.current_team()}")
+
+    # validate in pool and not taken
+    if req.athlete_id not in {p["athleteId"] for p in DRAFT_POOL}:
+        raise HTTPException(status_code=400, detail="Player not in draft pool.")
+    if req.athlete_id in d.picked_ids:
+        raise HTTPException(status_code=409, detail="Already drafted.")
+
+    try:
+        d.make_pick(req.athlete_id, req.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await broadcast({"type": "room_state", "data": serialize_room_state()})
+    return serialize_room_state()
+
+@app.get("/api/scoreboard")
+def scoreboard_api():
+    return serialize_scoreboard()
 
 @app.get("/api/player/{athlete_id}/holes")
-def api_player_holes(athlete_id: str):
-    # In stub mode this returns empty holes; later it will return real per-hole results
-    return ESPN.get_player_holes(athlete_id)
+def player_holes(athlete_id: str):
+    sc = scorecards.get(athlete_id)
+    if not sc:
+        return {"athleteId": athlete_id, "name": athlete_id.replace("-", " ").title(), "holes": [], "fantasyPoints": 0}
+    return {
+        "athleteId": sc.athlete_id,
+        "name": sc.name,
+        "fantasyPoints": sc.fantasy_points,
+        "holes": [
+            {"round": h.round, "hole": h.hole, "par": h.par, "strokes": h.strokes, "result": h.result, "points": h.points}
+            for h in sc.holes
+        ],
+        "updatedTs": sc.updated_ts,
+    }
 
-@app.get("/api/draft/scoreboard")
-def api_draft_scoreboard():
-    """
-    Returns fantasy points for all drafted players.
-    Cached for 10-15s to support polling.
-    """
-    now = time.time()
-    if not hasattr(api_draft_scoreboard, "_cache"):
-        api_draft_scoreboard._cache = {"ts": 0.0, "value": None}
-    cache = api_draft_scoreboard._cache
-    if cache["value"] is not None and (now - cache["ts"]) < 10:
-        return cache["value"]
+# -------- WebSocket --------
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    user_id = ws.query_params.get("userId")
+    if not user_id:
+        await ws.close(code=1008)
+        return
 
-    out = {"teams": {}}
-    for team, roster in draft_state.items():
-        team_total = 0
-        players = []
-        for p in roster:
-            aid = p["athleteId"]
-            data = ESPN.get_player_holes(aid)
-            pts = int(data.get("fantasyPoints") or 0)
-            team_total += pts
-            players.append({"athleteId": aid, "name": p["name"], "fantasyPoints": pts})
+    await ws.accept()
+    ROOM.sockets[user_id] = ws
 
-        out["teams"][team] = {"total": team_total, "players": players}
+    # send snapshots
+    await ws.send_json({"type": "room_state", "data": serialize_room_state()})
+    await ws.send_json({"type": "scoreboard", "data": serialize_scoreboard()})
 
-    cache["ts"] = now
-    cache["value"] = out
-    return out
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        ROOM.sockets.pop(user_id, None)
+    except Exception:
+        ROOM.sockets.pop(user_id, None)
