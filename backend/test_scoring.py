@@ -1,4 +1,49 @@
 from scoring import score_golfer, SCORING_RULES
+from scraper import fetch_espn_leaderboard, map_espn_field
+
+
+data = fetch_espn_leaderboard()
+golfers = map_espn_field(data)
+
+print("Number of golfers:", len(golfers))
+print(type(golfers))
+print(golfers)
+assert isinstance(golfers, list)
+assert len(golfers) > 0
+
+first = golfers[0]
+
+print("First mapped golfer:")
+print(first)
+
+assert "name" in first
+assert "rounds" in first
+assert "finishing_position" in first
+assert "score_to_par" in first
+
+assert isinstance(first["name"], str)
+assert isinstance(first["rounds"], list)
+assert isinstance(first["score_to_par"], int)
+
+if first["rounds"]:
+    assert isinstance(first["rounds"][0], list)
+    if first["rounds"][0]:
+        hole = first["rounds"][0][0]
+        assert "hole" in hole
+        assert "strokes" in hole
+        assert "par" in hole
+        assert "hole_in_one" in hole
+
+result = score_golfer(first, SCORING_RULES)
+
+print("Scored result:")
+print(result)
+
+assert "golfer_name" in result
+assert "fantasy_points" in result
+assert "stats" in result
+
+print("All tests passed.")
 
 # Simple test golfer
 golfer_data = {
@@ -15,7 +60,21 @@ golfer_data = {
     "finishing_position": 12
 }
 
-result = score_golfer(golfer_data, SCORING_RULES)
+normalized_golfer = {
+    "name": "Mikel Arteta",
+    "rounds": [
+        [
+            {"hole": 1, "par": 4, "strokes": 3, "hole_in_one": False},
+            {"hole": 2, "par": 5, "strokes": 4, "hole_in_one": False},
+        ]
+    ],
+    "finishing_position": None,
+}
+'''
+result_golf = score_golfer(golfer_data, SCORING_RULES)
+result_norm = score_golfer(normalized_golfer, SCORING_RULES)
 
 print("FINAL RESULT:")
-print(result)
+print(result_golf)
+print(result_norm)
+'''

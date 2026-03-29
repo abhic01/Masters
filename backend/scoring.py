@@ -263,4 +263,21 @@ def score_golfer(golfer_data: Dict[str, Any], scoring_rules: Dict[str, Any]) -> 
         "stats": stats,
     }
 
+def score_field(golfers, scoring_rules):
+    results = []
+    for golfer in golfers:
+        results.append(score_golfer(golfer, scoring_rules))
+    return results
+
+def score_team(team_name, golfers, scoring_rules):
+    scored = [score_golfer(g, scoring_rules) for g in golfers]
+    total = sum(g['fantasy_points'] for g in scored)
+
+    return {
+        'team_name': team_name,
+        'team_total': round(total, 2),
+        'golfers': scored
+    }
+
+
 
