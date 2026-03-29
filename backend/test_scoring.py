@@ -2,7 +2,7 @@ from scoring import score_golfer, SCORING_RULES
 
 # Simple test golfer
 golfer_data = {
-    "name": "Clavicular",
+    "name": "Drake Maye",
     "rounds": [
         [
             {"hole": 1, "par": 4, "strokes": 3},  # birdie
