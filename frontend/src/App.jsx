@@ -24,15 +24,33 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [holeModal, setHoleModal] = useState(null);
   const [error, setError] = useState("");
+  const [tournamentLeaderboard, setTournamentLeaderboard] = useState([]);
 
   // after join: websocket + load field
   useEffect(() => {
     if (!joined) return;
 
+    let intervalId;
+
     (async () => {
-      const f = await api.field(50);
-      setField(f.players || []);
+      try {
+        const f = await api.field(50);
+        setField(f.players || []);
+        const lb = await api.tournamentLeaderboard();
+        setTournamentLeaderboard(lb.leaderboard || []);
+      } catch (e) {
+        console.error("initial load failed:", e);
+      }
     })();
+
+    intervalId = setInterval(async () => {
+      try {
+        const lb = await api.tournamentLeaderboard();
+        setTournamentLeaderboard(lb.leaderboard || []);
+      } catch (e) {
+        console.error("leaderboard refresh failed:", e);
+      }
+    }, 15000);
 
     const ws = connectWS(userId, (msg) => {
       if (msg.type === "room_state") setRoom(msg.data);
@@ -40,13 +58,21 @@ export default function App() {
       if (msg.type === "error") console.log("WS error:", msg.data);
     });
 
-    return () => ws.close();
+    return () => {
+      clearInterval(intervalId);
+      ws.close();
+    };
   }, [joined, userId]);
 
   const me = useMemo(() => {
     const users = room?.users || [];
     return users.find((u) => u.userId === userId) || null;
   }, [room, userId]);
+
+  const myTeam = useMemo(() => {
+    if (!me || !scoreboard?.teams) return null;
+    return scoreboard.teams[me.name] || null;
+  }, [me, scoreboard]);
 
   const draft = room?.draft;
   const picked = useMemo(() => new Set(draft?.picked || []), [draft]);
@@ -58,8 +84,20 @@ export default function App() {
       .filter((p) => (q ? p.name.toLowerCase().includes(q) : true));
   }, [field, picked, query]);
 
+  const leagueStandings = useMemo(() => {
+    if (!scoreboard?.teams) return [];
+    return Object.entries(scoreboard.teams)
+      .map(([teamName, data]) => ({
+        teamName,
+        total: data.total || 0,
+        players: data.players || [],
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [scoreboard]);
+
   const onClock = draft?.currentTeam;
-  const isMyTurn = !!me && draft?.started && !draft?.completed && onClock === me.name;
+  const isMyTurn =
+    !!me && draft?.started && !draft?.completed && onClock === me.name;
 
   async function doJoin() {
     setError("");
@@ -80,7 +118,12 @@ export default function App() {
   async function startDraft() {
     setError("");
     try {
-      await api.startDraft(userId, { seconds_per_pick: 60, roster_size: 6, snake: true, auto_pick: true });
+      await api.startDraft(userId, {
+        seconds_per_pick: 60,
+        roster_size: 6,
+        snake: true,
+        auto_pick: true,
+      });
     } catch (e) {
       setError(e.message);
     }
@@ -107,20 +150,28 @@ export default function App() {
       <div className="page">
         <div className="card" style={{ maxWidth: 520, margin: "80px auto" }}>
           <h1 style={{ marginTop: 0 }}>Join the Draft</h1>
-          <p className="muted">Enter your name to enter the lobby. The host will start the draft.</p>
+          <p className="muted">
+            Enter your name to enter the lobby. The host will start the draft.
+          </p>
 
           <input
             className="input"
             placeholder="Your name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") doJoin(); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") doJoin();
+            }}
             style={{ width: "100%" }}
           />
 
           {error && <div className="error">{error}</div>}
 
-          <button className="btn primary" onClick={doJoin} style={{ marginTop: 12, width: "100%" }}>
+          <button
+            className="btn primary"
+            onClick={doJoin}
+            style={{ marginTop: 12, width: "100%" }}
+          >
             Continue
           </button>
         </div>
@@ -135,7 +186,8 @@ export default function App() {
         <div>
           <h1>Masters Draft Room</h1>
           <div className="muted">
-            You are: <b>{me?.name || "…"}</b> {me?.isHost ? <span className="pillHost">HOST</span> : null}
+            You are: <b>{me?.name || "…"}</b>{" "}
+            {me?.isHost ? <span className="pillHost">HOST</span> : null}
             {" • "}
             {draft?.started
               ? draft.completed
@@ -147,12 +199,18 @@ export default function App() {
 
         <div className="actions">
           {me?.isHost && !draft?.started && (
-            <button className="btn primary" onClick={startDraft}>Start Draft (Randomize Order)</button>
+            <button className="btn primary" onClick={startDraft}>
+              Start Draft (Randomize Order)
+            </button>
           )}
         </div>
       </header>
 
-      {error && <div className="error" style={{ marginBottom: 10 }}>{error}</div>}
+      {error && (
+        <div className="error" style={{ marginBottom: 10 }}>
+          {error}
+        </div>
+      )}
 
       <div className="layout">
         {/* Left: lobby + available */}
@@ -162,21 +220,40 @@ export default function App() {
             {(room?.users || []).map((u) => (
               <div className="row" key={u.userId}>
                 <div className="name">
-                  {u.name} {u.isHost ? <span className="pillHost">HOST</span> : null}
+                  {u.name}{" "}
+                  {u.isHost ? <span className="pillHost">HOST</span> : null}
                 </div>
               </div>
             ))}
-            {(room?.users || []).length === 0 && <div className="empty">No one yet.</div>}
+            {(room?.users || []).length === 0 && (
+              <div className="empty">No one yet.</div>
+            )}
           </div>
 
-          <div style={{ marginTop: 12, display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <div
+            style={{
+              marginTop: 12,
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+            }}
+          >
             <h2>Available (Top 50)</h2>
             <div className="pill">
-              {draft?.started ? (isMyTurn ? "Your turn" : `Waiting: ${onClock}`) : "Waiting for host"}
+              {draft?.started
+                ? isMyTurn
+                  ? "Your turn"
+                  : `Waiting: ${onClock}`
+                : "Waiting for host"}
             </div>
           </div>
 
-          <input className="input" placeholder="Search..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input
+            className="input"
+            placeholder="Search..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
 
           <div className="list">
             {available.map((p) => (
@@ -193,40 +270,76 @@ export default function App() {
                 <div className="pill">{isMyTurn ? "Draft" : "—"}</div>
               </div>
             ))}
-            {available.length === 0 && <div className="empty">No available players.</div>}
+            {available.length === 0 && (
+              <div className="empty">No available players.</div>
+            )}
           </div>
         </section>
 
-        {/* Right: teams */}
+        {/* Right: dashboard */}
         <section className="teams">
-          {(draft?.teams || []).map((team) => {
-            const roster = draft?.rosters?.[team] || [];
-            const live = scoreboard?.teams?.[team];
-            return (
-              <div className="card" key={team}>
-                <div className="teamHeader">
-                  <h2>{team}</h2>
-                  <div className="total">Total: {live?.total ?? 0}</div>
-                </div>
+          {/* MY TEAM */}
+          <div className="card">
+            <div className="teamHeader">
+              <h2>My Team</h2>
+              <div className="total">Total: {myTeam?.total ?? 0}</div>
+            </div>
 
-                <div className="list">
-                  {roster.map((p) => {
-                    const pts = live?.players?.find((x) => x.athleteId === p.athleteId)?.fantasyPoints ?? 0;
-                    return (
-                      <div className="row" key={p.athleteId}>
-                        <div className="clickableName" onClick={() => openHoles(p.athleteId, p.name)}>
-                          <div className="name">{p.name}</div>
-                          <div className="meta">Click for holes</div>
-                        </div>
-                        <div className="pts">{pts}</div>
-                      </div>
-                    );
-                  })}
-                  {roster.length === 0 && <div className="empty">No picks yet.</div>}
+            <div className="list">
+              {(myTeam?.players || []).map((p) => (
+                <div className="row" key={p.athleteId}>
+                  <div
+                    className="clickableName"
+                    onClick={() => openHoles(p.athleteId, p.name)}
+                  >
+                    <div className="name">{p.name}</div>
+                    <div className="meta">Click for hole-by-hole</div>
+                  </div>
+                  <div className="pts">{p.fantasyPoints ?? 0}</div>
                 </div>
-              </div>
-            );
-          })}
+              ))}
+            </div>
+          </div>
+
+          {/* LEAGUE STANDINGS */}
+          <div className="card">
+            <h2>League Standings</h2>
+            <div className="list">
+              {leagueStandings.map((team, idx) => (
+                <div className="row" key={team.teamName}>
+                  <div>
+                    <div className="name">
+                      #{idx + 1} {team.teamName}
+                    </div>
+                    <div className="meta">
+                      {team.players.map((p) => p.name).join(", ")}
+                    </div>
+                  </div>
+                  <div className="pts">{team.total}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* TOURNAMENT LEADERBOARD */}
+          <div className="card">
+            <h2>Tournament Leaderboard</h2>
+            <div className="list">
+              {tournamentLeaderboard.slice(0, 25).map((player, idx) => (
+                <div className="row" key={`${player.golfer_name}-${idx}`}>
+                  <div>
+                    <div className="name">
+                      #{idx + 1} {player.golfer_name}
+                    </div>
+                    <div className="meta">
+                      Base: {player.base_points} • Bonus: {player.bonus_points}
+                    </div>
+                  </div>
+                  <div className="pts">{player.fantasy_points}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
       </div>
 
@@ -243,7 +356,9 @@ export default function App() {
               </div>
             </div>
           ))}
-          {(draft?.picks || []).length === 0 && <div className="empty">No picks yet.</div>}
+          {(draft?.picks || []).length === 0 && (
+            <div className="empty">No picks yet.</div>
+          )}
         </div>
       </section>
 
@@ -254,9 +369,13 @@ export default function App() {
             <div className="modalHeader">
               <div>
                 <div className="modalTitle">{holeModal.name}</div>
-                <div className="muted">Fantasy points: {holeModal.fantasyPoints ?? 0}</div>
+                <div className="muted">
+                  Fantasy points: {holeModal.fantasyPoints ?? 0}
+                </div>
               </div>
-              <button className="btn" onClick={() => setHoleModal(null)}>Close</button>
+              <button className="btn" onClick={() => setHoleModal(null)}>
+                Close
+              </button>
             </div>
 
             <div className="holes">
@@ -271,7 +390,9 @@ export default function App() {
                 </div>
               ))}
               {(holeModal.holes || []).length === 0 && (
-                <div className="empty">Hole-by-hole provider is currently stubbed.</div>
+                <div className="empty">
+                  Hole-by-hole provider is currently stubbed.
+                </div>
               )}
             </div>
           </div>

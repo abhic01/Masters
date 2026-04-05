@@ -26,4 +26,5 @@ export const api = {
   resetDraft: (userId) => jpost("/draft/reset", { userId }),
   pick: (userId, athleteId, name) => jpost("/draft/pick", { userId, athlete_id: athleteId, name }),
   playerHoles: (athleteId) => jget(`/player/${athleteId}/holes`),
+  tournamentLeaderboard: () => jget("/tournament-leaderboard"),
 };

@@ -27,3 +27,26 @@ export const api = {
   pick: (userId, athleteId, name) => jpost("/draft/pick", { userId, athlete_id: athleteId, name }),
   playerHoles: (athleteId) => jget(`/player/${athleteId}/holes`),
 };
+
+export function connectWS(userId, onMessage) {
+  const ws = new WebSocket(`ws://127.0.0.1:8000/ws?userId=${encodeURIComponent(userId)}`);
+
+  ws.onopen = () => {
+    console.log("WebSocket connected");
+  };
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (onMessage) onMessage(msg);
+  };
+
+  ws.onclose = () => {
+    console.log("WebSocket disconnected");
+  };
+
+  ws.onerror = (err) => {
+    console.error("WebSocket error:", err);
+  };
+
+  return ws;
+}

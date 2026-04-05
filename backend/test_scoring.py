@@ -1,7 +1,9 @@
 from scoring import score_golfer, SCORING_RULES
 from scraper import fetch_espn_leaderboard, map_espn_field
+from leaderboard import get_leaderboard, fetch_live_scorecards
 
 
+'''
 data = fetch_espn_leaderboard()
 golfers = map_espn_field(data)
 
@@ -59,7 +61,7 @@ golfer_data = {
     ],
     "finishing_position": 12
 }
-
+'''
 normalized_golfer = {
     "name": "Mikel Arteta",
     "rounds": [
@@ -70,6 +72,7 @@ normalized_golfer = {
     ],
     "finishing_position": None,
 }
+
 '''
 result_golf = score_golfer(golfer_data, SCORING_RULES)
 result_norm = score_golfer(normalized_golfer, SCORING_RULES)
@@ -78,3 +81,11 @@ print("FINAL RESULT:")
 print(result_golf)
 print(result_norm)
 '''
+
+#result_norm = score_golfer(normalized_golfer, SCORING_RULES)
+#print(result_norm)
+
+#print(get_leaderboard()[:5])
+
+cards = fetch_live_scorecards()
+print(list(cards.items())[:2])

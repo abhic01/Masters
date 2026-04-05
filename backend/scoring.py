@@ -58,33 +58,29 @@ def classify_result(strokes: Optional[int], par: Optional[int]) -> str:
 
 def points_for_hole(strokes: Optional[int], par: Optional[int]) -> int: 
     result = classify_result(strokes, par) 
-    return SCORING_RULES.get(
-        result, SCORING_RULES["OTHER"])
+    return float(SCORING_RULES["hole_points"].get(result, 0.0))
     
 
 
-def score_round(holes):
-    total = 0
-    '''
-    holes = list of dict:
+def score_round(holes: List[Dict[str, Any]]) -> float:
+    """
+    holes = list of dicts:
     [{"strokes": 4, "par": 5}, ...]
-    '''
+    """
+    total = 0.0
     for hole in holes:
-        total += points_for_hole(
-            hole.get("strokes"),
-            hole.get('par')
-        )
+        total += points_for_hole(hole.get("strokes"), hole.get("par"))
     return total
 
-def score_golfer_tournament(rounds):
+def score_golfer_tournament(rounds: List[List[Dict[str, Any]]]):
     '''
     rounds = list of rounds
     each round = list of holes
     '''
-    total = 0
+    total = 0.0
 
     for data in rounds:
-        total = score_round(data)
+        total += score_round(data)
     return total
 
 def get_finishing_bonus(position: Optional[int], finishing_rules: List[Dict[str, Any]]) -> float:
@@ -98,57 +94,6 @@ def get_finishing_bonus(position: Optional[int], finishing_rules: List[Dict[str,
     return 0.0
 
 def score_golfer(golfer_data: Dict[str, Any], scoring_rules: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    golfer_data example:
-    {
-        "name": "Scottie Scheffler",
-        "rounds": [
-            [
-                {"hole": 1, "par": 4, "strokes": 4},
-                {"hole": 2, "par": 5, "strokes": 4},
-                {"hole": 3, "par": 3, "strokes": 2}
-            ],
-            [
-                {"hole": 1, "par": 4, "strokes": 5}
-            ]
-        ],
-        "finishing_position": 12
-    }
-
-    scoring_rules example:
-    {
-        "hole_points": {
-            "PAR": 0.5,
-            "BIRDIE": 3,
-            "EAGLE": 8,
-            "ALBATROSS": 13,
-            "BOGEY": -1,
-            "DOUBLE_BOGEY": -3,
-            "TRIPLE_BOGEY_OR_WORSE": -4,
-            "HOLE_IN_ONE": 10
-        },
-        "bogey_free_round_bonus": 3,
-        "consecutive_birdies_bonus": 3,
-        "consecutive_bogeys_bonus": -3,
-        "hole_in_one_bonus": 10,
-        "finishing_points": [
-            {"min": 1, "max": 1, "points": 30},
-            {"min": 2, "max": 2, "points": 20},
-            {"min": 3, "max": 3, "points": 18},
-            {"min": 4, "max": 4, "points": 16},
-            {"min": 5, "max": 5, "points": 14},
-            {"min": 6, "max": 6, "points": 12},
-            {"min": 7, "max": 7, "points": 10},
-            {"min": 8, "max": 8, "points": 9},
-            {"min": 9, "max": 9, "points": 8},
-            {"min": 10, "max": 10, "points": 7},
-            {"min": 11, "max": 15, "points": 5},
-            {"min": 16, "max": 20, "points": 3},
-            {"min": 21, "max": 25, "points": 1}
-        ]
-    }
-    """
-
     stats = {
         "pars": 0,
         "birdies": 0,
@@ -165,13 +110,12 @@ def score_golfer(golfer_data: Dict[str, Any], scoring_rules: Dict[str, Any]) -> 
         "score_to_par": 0,
         "finishing_position": golfer_data.get("finishing_position"),
     }
-    # Initialize
+
     base_points = 0.0
     bonus_points = 0.0
-
     rounds = golfer_data.get("rounds", [])
+    hole_points = scoring_rules.get("hole_points", {})
 
-    # Scoring Logic
     for round_data in rounds:
         round_has_bogey_or_worse = False
         consecutive_birdies = 0
@@ -186,14 +130,14 @@ def score_golfer(golfer_data: Dict[str, Any], scoring_rules: Dict[str, Any]) -> 
                 continue
 
             stats["holes_completed"] += 1
-            stats["score_to_par"] += (strokes - par)
+            stats["score_to_par"] += strokes - par
 
             result = classify_result(strokes, par)
-            base_points += scoring_rules["hole_points"].get(result, 0)
+            base_points += float(hole_points.get(result, 0.0))
 
             if hole_in_one:
                 stats["hole_in_ones"] += 1
-                bonus_points += scoring_rules.get("hole_in_one_bonus", 0)
+                bonus_points += float(scoring_rules.get("hole_in_one_bonus", 0.0))
 
             if result == "PAR":
                 stats["pars"] += 1
@@ -207,7 +151,7 @@ def score_golfer(golfer_data: Dict[str, Any], scoring_rules: Dict[str, Any]) -> 
 
                 if consecutive_birdies == 3:
                     stats["consecutive_birdie_streaks"] += 1
-                    bonus_points += scoring_rules.get("consecutive_birdies_bonus", 0)
+                    bonus_points += float(scoring_rules.get("consecutive_birdies_bonus", 0.0))
                     consecutive_birdies = 0
 
             elif result == "EAGLE":
@@ -228,7 +172,7 @@ def score_golfer(golfer_data: Dict[str, Any], scoring_rules: Dict[str, Any]) -> 
 
                 if consecutive_bogeys == 3:
                     stats["consecutive_bogey_streaks"] += 1
-                    bonus_points += scoring_rules.get("consecutive_bogeys_bonus", 0)
+                    bonus_points += float(scoring_rules.get("consecutive_bogeys_bonus", 0.0))
                     consecutive_bogeys = 0
 
             elif result == "DOUBLE_BOGEY":
@@ -245,11 +189,11 @@ def score_golfer(golfer_data: Dict[str, Any], scoring_rules: Dict[str, Any]) -> 
 
         if round_data and not round_has_bogey_or_worse:
             stats["bogey_free_rounds"] += 1
-            bonus_points += scoring_rules.get("bogey_free_round_bonus", 0)
+            bonus_points += float(scoring_rules.get("bogey_free_round_bonus", 0.0))
 
     finishing_bonus = get_finishing_bonus(
         golfer_data.get("finishing_position"),
-        scoring_rules.get("finishing_points", [])
+        scoring_rules.get("finishing_points", []),
     )
     bonus_points += finishing_bonus
 
@@ -263,11 +207,8 @@ def score_golfer(golfer_data: Dict[str, Any], scoring_rules: Dict[str, Any]) -> 
         "stats": stats,
     }
 
-def score_field(golfers, scoring_rules):
-    results = []
-    for golfer in golfers:
-        results.append(score_golfer(golfer, scoring_rules))
-    return results
+def score_field(golfers: List[Dict[str, Any]], scoring_rules: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [score_golfer(golfer, scoring_rules) for golfer in golfers]
 
 def score_team(team_name, golfers, scoring_rules):
     scored = [score_golfer(g, scoring_rules) for g in golfers]

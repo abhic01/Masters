@@ -315,6 +315,10 @@ async def make_pick(req: MakePickReq):
 def scoreboard_api():
     return serialize_scoreboard()
 
+@app.get('/api/tournament-leaderboard')
+def tournament_leaderboard():
+    return {'leaderboard': get_leaderboard()}
+
 @app.get("/api/player/{athlete_id}/holes")
 def player_holes(athlete_id: str):
     sc = scorecards.get(athlete_id)
