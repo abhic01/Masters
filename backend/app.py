@@ -13,7 +13,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from draft import DraftConfig, DraftState
-from providers import StubProvider, PlayerScorecard
+#from providers import StubProvider, PlayerScorecard
+
+
+from leaderboard import get_leaderboard, fetch_live_scorecards, LivePlayerScorecard
 
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 PLAYERS_CSV = os.path.join(APP_ROOT, "players.csv")
@@ -68,9 +71,11 @@ def load_top_players(limit: int = 50) -> List[Dict[str, str]]:
 
 DRAFT_POOL = load_top_players(50)
 
-# -------- scoring (stub) --------
-provider = StubProvider()
-scorecards: Dict[str, PlayerScorecard] = {}
+# -------- Live scoring (stub now) --------
+
+#provider = StubProvider()
+scorecards: Dict[str, LivePlayerScorecard] = {}
+
 
 # -------- room state --------
 @dataclass
@@ -174,13 +179,16 @@ async def draft_clock_loop():
 
 async def scoring_loop():
     while True:
-        await asyncio.sleep(5)
+        await asyncio.sleep(15)
         drafted_ids = list(ROOM.draft.picked_ids)
         if not drafted_ids:
             continue
         try:
-            fetched = provider.fetch_many(drafted_ids)
-            scorecards.update(fetched)
+            fetched = fetch_live_scorecards()
+
+            filtered = {aid: sc for aid, sc in fetched.items() if aid in drafted_ids}
+            scorecards.clear()
+            scorecards.update(filtered)
             await broadcast({"type": "scoreboard", "data": serialize_scoreboard()})
         except Exception as e:
             await broadcast({"type": "error", "data": {"message": f"scoring_loop: {e}"}})
@@ -301,6 +309,10 @@ async def make_pick(req: MakePickReq):
 @app.get("/api/scoreboard")
 def scoreboard():
     return serialize_scoreboard()
+
+@app.get('/api/tournament-leaderboard')
+def tournament_leaderboard():
+    return {'leaderboard': get_leaderboard()}
 
 @app.get("/api/player/{athlete_id}/holes")
 def player_holes(athlete_id: str):
