@@ -18,7 +18,7 @@ from providers import StubProvider, PlayerScorecard
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 PLAYERS_CSV = os.path.join(APP_ROOT, "players.csv")
 
-app = FastAPI(title="Masters Draft Room API")
+app = FastAPI(title="Masters Draft Room API (Known Good)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,7 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------- Draft Pool --------
+# -------- Draft pool --------
 def slugify(s: str) -> str:
     return (
         s.strip()
@@ -68,11 +68,11 @@ def load_top_players(limit: int = 50) -> List[Dict[str, str]]:
 
 DRAFT_POOL = load_top_players(50)
 
-# -------- Live scoring (stub now) --------
+# -------- scoring (stub) --------
 provider = StubProvider()
 scorecards: Dict[str, PlayerScorecard] = {}
 
-# -------- Room state (single room for now) --------
+# -------- room state --------
 @dataclass
 class User:
     user_id: str
@@ -81,8 +81,8 @@ class User:
 
 class Room:
     def __init__(self):
-        self.users: Dict[str, User] = {}              # user_id -> user
-        self.sockets: Dict[str, WebSocket] = {}       # user_id -> websocket
+        self.users: Dict[str, User] = {}
+        self.sockets: Dict[str, WebSocket] = {}
         self.draft = DraftState(DraftConfig(roster_size=6, seconds_per_pick=60, snake=True, auto_pick=True))
         self.draft.reset_for_teams([])
 
@@ -94,10 +94,10 @@ class Room:
 
 ROOM = Room()
 
-# -------- WebSocket manager --------
+# -------- broadcast --------
 async def broadcast(msg: Dict[str, Any]):
-    dead = []
-    for uid, ws in ROOM.sockets.items():
+    dead: List[str] = []
+    for uid, ws in list(ROOM.sockets.items()):
         try:
             await ws.send_json(msg)
         except Exception:
@@ -107,18 +107,16 @@ async def broadcast(msg: Dict[str, Any]):
         ROOM.users.pop(uid, None)
 
 def serialize_room_state() -> Dict[str, Any]:
-    # Users for lobby
     users = [{"userId": u.user_id, "name": u.name, "isHost": u.is_host} for u in ROOM.users.values()]
     users.sort(key=lambda x: (not x["isHost"], x["name"].lower()))
 
-    # Draft state
     d = ROOM.draft
     return {
         "users": users,
         "draft": {
             "started": d.started,
             "completed": d.completed,
-            "teams": d.teams,  # in draft order
+            "teams": d.teams,
             "pickNo": d.pick_no,
             "totalPicks": d.total_picks,
             "currentTeam": d.current_team(),
@@ -133,7 +131,7 @@ def serialize_room_state() -> Dict[str, Any]:
             ],
             "rosters": {t: [{"athleteId": aid, "name": nm} for (aid, nm) in d.rosters.get(t, [])] for t in d.teams},
             "picked": list(d.picked_ids),
-        }
+        },
     }
 
 def serialize_scoreboard() -> Dict[str, Any]:
@@ -149,7 +147,7 @@ def serialize_scoreboard() -> Dict[str, Any]:
         teams_out[team] = {"total": total, "players": players}
     return {"teams": teams_out, "updatedTs": time.time()}
 
-# -------- Background loops --------
+# -------- loops --------
 async def draft_clock_loop():
     while True:
         await asyncio.sleep(1)
@@ -192,7 +190,7 @@ async def _startup():
     asyncio.create_task(draft_clock_loop())
     asyncio.create_task(scoring_loop())
 
-# -------- REST models/endpoints --------
+# -------- REST models --------
 class JoinReq(BaseModel):
     userId: str
     name: str
@@ -209,6 +207,7 @@ class MakePickReq(BaseModel):
     athlete_id: str
     name: str
 
+# -------- REST endpoints --------
 @app.get("/api/health")
 def health():
     return {"ok": True}
@@ -217,23 +216,22 @@ def health():
 def field(limit: int = 50):
     return {"players": DRAFT_POOL[:limit]}
 
+@app.get("/api/state")
+def state():
+    return serialize_room_state()
+
 @app.post("/api/join")
 async def join(req: JoinReq):
-    # idempotent join/update name
+    nm = (req.name or "").strip()[:30] or "Player"
     if req.userId in ROOM.users:
-        ROOM.users[req.userId].name = req.name.strip()[:30] or "Player"
+        ROOM.users[req.userId].name = nm
     else:
-        ROOM.users[req.userId] = User(user_id=req.userId, name=req.name.strip()[:30] or "Player")
+        ROOM.users[req.userId] = User(user_id=req.userId, name=nm)
 
-    # ensure one host exists
     if ROOM.host_id() is None:
         ROOM.users[req.userId].is_host = True
 
     await broadcast({"type": "room_state", "data": serialize_room_state()})
-    return serialize_room_state()
-
-@app.get("/api/state")
-def state():
     return serialize_room_state()
 
 @app.post("/api/draft/start")
@@ -246,7 +244,6 @@ async def start_draft(req: StartDraftReq):
     if len(ROOM.users) < 2:
         raise HTTPException(status_code=400, detail="Need at least 2 players to start.")
 
-    # apply config
     if req.seconds_per_pick is not None:
         ROOM.draft.config.seconds_per_pick = int(req.seconds_per_pick)
     if req.roster_size is not None:
@@ -256,7 +253,6 @@ async def start_draft(req: StartDraftReq):
     if req.auto_pick is not None:
         ROOM.draft.config.auto_pick = bool(req.auto_pick)
 
-    # randomize order
     names = [usr.name for usr in ROOM.users.values()]
     random.shuffle(names)
 
@@ -285,12 +281,11 @@ async def make_pick(req: MakePickReq):
     if not d.started or d.completed:
         raise HTTPException(status_code=400, detail="Draft not active.")
 
-    # Only the user whose NAME matches the current team can pick
     if d.current_team() != u.name:
         raise HTTPException(status_code=403, detail=f"Not your turn. On the clock: {d.current_team()}")
 
-    # validate in pool and not taken
-    if req.athlete_id not in {p["athleteId"] for p in DRAFT_POOL}:
+    pool_ids = {p["athleteId"] for p in DRAFT_POOL}
+    if req.athlete_id not in pool_ids:
         raise HTTPException(status_code=400, detail="Player not in draft pool.")
     if req.athlete_id in d.picked_ids:
         raise HTTPException(status_code=409, detail="Already drafted.")
@@ -304,7 +299,7 @@ async def make_pick(req: MakePickReq):
     return serialize_room_state()
 
 @app.get("/api/scoreboard")
-def scoreboard_api():
+def scoreboard():
     return serialize_scoreboard()
 
 @app.get("/api/player/{athlete_id}/holes")
@@ -334,7 +329,6 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     ROOM.sockets[user_id] = ws
 
-    # send snapshots
     await ws.send_json({"type": "room_state", "data": serialize_room_state()})
     await ws.send_json({"type": "scoreboard", "data": serialize_scoreboard()})
 
@@ -345,3 +339,11 @@ async def ws_endpoint(ws: WebSocket):
         ROOM.sockets.pop(user_id, None)
     except Exception:
         ROOM.sockets.pop(user_id, None)
+        
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)        

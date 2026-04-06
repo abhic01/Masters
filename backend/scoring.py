@@ -1,10 +1,6 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-
-# Fantasy scoring per HOLE outcome.
-# Edit as needed.
 POINTS_BY_RESULT: Dict[str, int] = {
     "ALBATROSS": 5,
     "DOUBLE_EAGLE": 5,
@@ -14,16 +10,11 @@ POINTS_BY_RESULT: Dict[str, int] = {
     "BOGEY": -1,
     "DOUBLE_BOGEY": -2,
     "TRIPLE_BOGEY": -3,
-    # anything worse:
     "QUADRUPLE_BOGEY": -4,
     "OTHER": 0,
 }
 
-
 def classify_result(strokes: Optional[int], par: Optional[int]) -> str:
-    """
-    Convert (strokes, par) -> result label.
-    """
     if strokes is None or par is None:
         return "OTHER"
     diff = strokes - par
@@ -43,7 +34,5 @@ def classify_result(strokes: Optional[int], par: Optional[int]) -> str:
         return "TRIPLE_BOGEY"
     return "QUADRUPLE_BOGEY"
 
-
 def points_for_hole(strokes: Optional[int], par: Optional[int]) -> int:
-    result = classify_result(strokes, par)
-    return POINTS_BY_RESULT.get(result, POINTS_BY_RESULT["OTHER"])
+    return POINTS_BY_RESULT.get(classify_result(strokes, par), POINTS_BY_RESULT["OTHER"])
