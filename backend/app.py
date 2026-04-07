@@ -113,7 +113,7 @@ AMERICANS = {
     "davis-riley",
     "xander-schauffele",
     "scottie-scheffler",
-    "j.j-spaun",
+    "jj-spaun",
     "jordan-spieth",
     "samuel-stevens",
     "justin-thomas",
@@ -123,6 +123,7 @@ AMERICANS = {
 }
 
 NON_PGA_TOUR = {
+    # LIV players
     "bryson-dechambeau",
     "sergio-garcia",
     "tyrrell-hatton",
@@ -134,23 +135,27 @@ NON_PGA_TOUR = {
     "charl-schwartzel",
     "cameron-smith",
     "bubba-watson",
+
+    # amateurs / non-PGA invitees
     "ethan-fang",
     "jackson-herrington",
     "brandon-holtz",
     "mason-howell",
     "fifa-laopakdee",
     "mateo-pulcini",
+    "naoyuki-kataoka",
+    "casey-jarvis",
+    "marco-penge",
+    "kristoffer-reitan",
+    "rasmus-neergaard-petersen",
+
+    # past champions / non-PGA regulars
     "angel-cabrera",
     "fred-couples",
     "jose-maria-olazabal",
     "vijay-singh",
     "mike-weir",
     "danny-willett",
-    "naoyuki-kataoka",
-    "casey-jarvis",
-    "marco-penge",
-    "kristoffer-reitan",
-    "rasmus-neergaard-petersen",
 }
 
 

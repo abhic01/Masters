@@ -722,6 +722,29 @@ export default function App() {
               : "Draft not started"}
           </div>
         </div>
+        <div className="actions">
+          <button className="btn" onClick={() => setViewMode("dashboard")}>Standings</button>
+          <button className="btn" onClick={() => setViewMode("draft")}>Draft Room</button>
+          <button className="btn" onClick={() => setViewMode("auto")}>Auto View</button>
+
+          {me?.isHost && !draft?.started && (
+            <button className="btn primary" onClick={startDraft}>Start Draft</button>
+          )}
+
+          {me?.isHost && draft?.started && !draft?.completed && (
+            <div className="timerControls">
+              <input
+                className="input timerInput"
+                type="number"
+                min="5"
+                max="300"
+                value={timerInput}
+                onChange={(e) => setTimerInput(e.target.value)}
+              />
+              <button className="btn" onClick={updateTimer}>Update Timer</button>
+            </div>
+          )}
+        </div>        
       </header>
 
       {error && <div className="error" style={{ marginBottom: 10 }}>{error}</div>}
