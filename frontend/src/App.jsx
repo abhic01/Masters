@@ -120,35 +120,29 @@ function aggregateNestedBreakdown(nested) {
   return aggregated;
 }
 
-function buildSnakeBoard(teams, picks, snake) {
+function buildColumnDraftBoard(teams, picks) {
   if (!Array.isArray(teams) || teams.length === 0) return [];
   const totalRounds = 7;
-  const board = [];
+  const columns = teams.map((team) => ({
+    team,
+    rounds: Array.from({ length: totalRounds }, (_, idx) => ({
+      round: idx + 1,
+      pick: null,
+    })),
+  }));
 
-  for (let round = 1; round <= totalRounds; round++) {
-    const roundOrder = snake && round % 2 === 0 ? [...teams].reverse() : [...teams];
-    const startPick = (round - 1) * teams.length + 1;
-    const endPick = round * teams.length;
+  const teamIndex = Object.fromEntries(columns.map((col, idx) => [col.team, idx]));
 
-    const roundPicks = (Array.isArray(picks) ? picks : []).filter(
-      (p) => p.pickNo >= startPick && p.pickNo <= endPick
-    );
-
-    const picksByTeam = {};
-    roundPicks.forEach((p) => {
-      picksByTeam[p.team] = p;
-    });
-
-    board.push({
-      round,
-      order: roundOrder.map((team) => ({
-        team,
-        pick: picksByTeam[team] || null,
-      })),
-    });
+  for (const pick of Array.isArray(picks) ? picks : []) {
+    const teamIdx = teamIndex[pick.team];
+    if (teamIdx == null) continue;
+    const round = Math.ceil(pick.pickNo / teams.length);
+    if (round >= 1 && round <= totalRounds) {
+      columns[teamIdx].rounds[round - 1].pick = pick;
+    }
   }
 
-  return board;
+  return columns;
 }
 
 export default function App() {
@@ -170,6 +164,7 @@ export default function App() {
   const [timerInput, setTimerInput] = useState(60);
   const [viewMode, setViewMode] = useState("auto");
   const [autoPicking, setAutoPicking] = useState(false);
+  const [liveSeconds, setLiveSeconds] = useState(0);
 
   const draft = room?.draft;
 
@@ -178,6 +173,22 @@ export default function App() {
       setTimerInput(draft.secondsPerPick);
     }
   }, [draft?.secondsPerPick]);
+
+  useEffect(() => {
+    if (!draft?.started || draft?.completed || !draft?.deadlineTs) {
+      setLiveSeconds(draft?.secondsLeft ?? 0);
+      return;
+    }
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil(draft.deadlineTs - Date.now() / 1000));
+      setLiveSeconds(remaining);
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [draft?.started, draft?.completed, draft?.deadlineTs, draft?.secondsLeft]);
 
   useEffect(() => {
     if (!joined) return;
@@ -254,13 +265,13 @@ export default function App() {
       .sort((a, b) => b.total - a.total);
   }, [scoreboard]);
 
-  const onClock = draft?.currentTeam;
-  const isMyTurn = !!me && draft?.started && !draft?.completed && onClock === me.name;
-
-  const snakeBoard = useMemo(
-    () => buildSnakeBoard(draft?.teams || [], draft?.picks || [], !!draft?.snake),
+  const draftColumns = useMemo(
+    () => buildColumnDraftBoard(draft?.teams || [], draft?.picks || []),
     [draft]
   );
+
+  const onClock = draft?.currentTeam;
+  const isMyTurn = !!me && draft?.started && !draft?.completed && onClock === me.name;
 
   const autoView = draft?.started && !draft?.completed ? "draft" : "dashboard";
   const activeView = viewMode === "auto" ? autoView : viewMode;
@@ -444,35 +455,28 @@ export default function App() {
     );
   }
 
-  function renderSnakeDraftBoard() {
+  function renderColumnDraftBoard() {
     return (
       <section className="card picksCard">
         <div className="sectionHeader">
-          <h2 className="h2">Snake Draft Board</h2>
+          <h2 className="h2">Draft Board</h2>
           <div className="pill">{(draft?.teams || []).length} teams</div>
         </div>
 
-        <div className="snakeBoard">
-          {snakeBoard.map((row) => (
-            <div key={row.round} className="snakeRound">
-              <div className="snakeRoundLabel">Round {row.round}</div>
-              <div className="snakeRoundPicks">
-                {row.order.map(({ team, pick }, idx) => (
-                  <div
-                    key={`${row.round}-${team}-${idx}`}
-                    className={`snakeCell ${draft?.currentTeam === team && !draft?.completed ? "snakeCellOnClock" : ""}`}
-                  >
-                    <div className="snakeCellTop">
-                      <span className="snakeTeam">{team}</span>
-                      <span className="snakePickNo">
-                        #{(row.round - 1) * (draft?.teams?.length || 0) + idx + 1}
-                      </span>
-                    </div>
-                    <div className="snakePlayer">{pick?.name || "—"}</div>
-                    <div className="snakeMeta">{pick?.slotLabel || "Waiting"}</div>
-                  </div>
-                ))}
-              </div>
+        <div className="columnDraftBoard">
+          {draftColumns.map((column) => (
+            <div
+              key={column.team}
+              className={`draftColumn ${draft?.currentTeam === column.team && !draft?.completed ? "draftColumnOnClock" : ""}`}
+            >
+              <div className="draftColumnHeader">{column.team}</div>
+              {column.rounds.map((round) => (
+                <div className="draftColumnCell" key={`${column.team}-${round.round}`}>
+                  <div className="draftColumnRound">R{round.round}</div>
+                  <div className="draftColumnPlayer">{round.pick?.name || "—"}</div>
+                  <div className="draftColumnMeta">{round.pick?.slotLabel || ""}</div>
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -636,7 +640,7 @@ export default function App() {
           {renderMyTeamCard()}
         </div>
 
-        {renderSnakeDraftBoard()}
+        {renderColumnDraftBoard()}
       </>
     );
   }
@@ -692,7 +696,7 @@ export default function App() {
             {draft?.started
               ? draft.completed
                 ? "Draft complete"
-                : `On the clock: ${draft.currentTeam} • Pick ${draft.pickNo}/${draft.totalPicks} • ${draft.secondsLeft}s`
+                : `On the clock: ${draft.currentTeam} • Pick ${draft.pickNo}/${draft.totalPicks} • ${liveSeconds}s`
               : "Draft not started"}
           </div>
         </div>
