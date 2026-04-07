@@ -25,13 +25,12 @@ function getOrCreateUserId() {
   return v;
 }
 
-function formatCategoryTags(player) {
+function getCategoryTags(player) {
   const tags = [];
   if (player.isPastChampion) tags.push("Past Champion");
   if (player.isInternational) tags.push("International");
   if (player.isAmerican) tags.push("American");
   if (player.isNonPga) tags.push("Non-PGA");
-  if (tags.length === 0) tags.push("Wildcard Only");
   return tags;
 }
 
@@ -49,6 +48,13 @@ export default function App() {
   const [slotModal, setSlotModal] = useState(null);
   const [error, setError] = useState("");
   const [tournamentLeaderboard, setTournamentLeaderboard] = useState([]);
+  const [timerInput, setTimerInput] = useState(60);
+
+  useEffect(() => {
+    if (draft?.secondsPerPick) {
+      setTimerInput(draft.secondsPerPick);
+    }
+  }, [room?.draft?.secondsPerPick]);
 
   useEffect(() => {
     if (!joined) return;
@@ -59,10 +65,15 @@ export default function App() {
       try {
         const f = await api.field(50);
         setField(f.players || []);
+        const s = await api.state();
+        setRoom(s);
+        const sb = await api.scoreboard();
+        setScoreboard(sb);
         const lb = await api.tournamentLeaderboard();
         setTournamentLeaderboard(lb.leaderboard || []);
       } catch (e) {
         console.error("initial load failed:", e);
+        setError(e.message || "Failed to load app data.");
       }
     })();
 
@@ -152,6 +163,15 @@ export default function App() {
     }
   }
 
+  async function updateTimer() {
+    setError("");
+    try {
+      await api.updateTimer(userId, Number(timerInput));
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   async function submitDraft(player, slot = null) {
     const res = await api.pick(userId, player.athleteId, player.name, slot);
     if (res?.needsSlotSelection) {
@@ -236,11 +256,28 @@ export default function App() {
               : "Lobby (draft not started)"}
           </div>
         </div>
+
         <div className="actions">
           {me?.isHost && !draft?.started && (
             <button className="btn primary" onClick={startDraft}>
               Start Draft (Randomize Order)
             </button>
+          )}
+
+          {me?.isHost && draft?.started && !draft?.completed && (
+            <div className="timerControls">
+              <input
+                className="input timerInput"
+                type="number"
+                min="5"
+                max="300"
+                value={timerInput}
+                onChange={(e) => setTimerInput(e.target.value)}
+              />
+              <button className="btn" onClick={updateTimer}>
+                Update Timer
+              </button>
+            </div>
           )}
         </div>
       </header>
@@ -276,7 +313,13 @@ export default function App() {
               >
                 <div>
                   <div className="name">{p.name}</div>
-                  <div className="meta">{formatCategoryTags(p).join(" • ")}</div>
+                  <div className="tagRow">
+                    {getCategoryTags(p).map((tag) => (
+                      <span key={tag} className="categoryTag">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
                 </div>
                 <div className="pill">{isMyTurn ? "Draft" : "—"}</div>
               </div>
@@ -303,7 +346,13 @@ export default function App() {
                       <>
                         <div className="clickableName" onClick={() => openHoles(player.athleteId, player.name)}>{player.name}</div>
                         <div className="meta">
-                          {scoreRow?.status === "missed_cut" ? "Missed cut" : scoreRow?.status === "active_backup" ? "Active backup" : isStarter ? "Starter" : "Backup"}
+                          {scoreRow?.status === "missed_cut"
+                            ? "Missed cut"
+                            : scoreRow?.status === "active_backup"
+                            ? "Active backup"
+                            : isStarter
+                            ? "Starter"
+                            : "Backup"}
                           {typeof scoreRow?.madeCut === "boolean" ? ` • ${scoreRow.madeCut ? "Made cut" : "Missed cut"}` : ""}
                         </div>
                       </>
@@ -374,6 +423,13 @@ export default function App() {
               <div>
                 <div className="modalTitle">Choose a slot for {slotModal.player.name}</div>
                 <div className="muted">This player qualifies for multiple categories.</div>
+                <div className="tagRow">
+                  {getCategoryTags(slotModal.player).map((tag) => (
+                    <span key={tag} className="categoryTag">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
               <button className="btn" onClick={() => setSlotModal(null)}>Close</button>
             </div>

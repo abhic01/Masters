@@ -173,7 +173,6 @@ async def broadcast(msg: Dict[str, Any]):
             dead.append(uid)
     for uid in dead:
         ROOM.sockets.pop(uid, None)
-        ROOM.users.pop(uid, None)
 
 
 def serialize_room_state() -> Dict[str, Any]:
@@ -314,6 +313,11 @@ class MakePickReq(BaseModel):
     slot: Optional[str] = None
 
 
+class UpdateTimerReq(BaseModel):
+    userId: str
+    seconds_per_pick: int
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True}
@@ -381,6 +385,26 @@ async def reset_draft(req: StartDraftReq):
     await broadcast({"type": "room_state", "data": serialize_room_state()})
     await broadcast({"type": "scoreboard", "data": serialize_scoreboard()})
     return serialize_room_state()
+
+
+@app.post("/api/draft/timer")
+async def update_timer(req: UpdateTimerReq):
+    u = ROOM.users.get(req.userId)
+    if not u or not u.is_host:
+        raise HTTPException(status_code=403, detail="Only host can change the timer.")
+
+    new_seconds = int(req.seconds_per_pick)
+    if new_seconds < 5 or new_seconds > 300:
+        raise HTTPException(status_code=400, detail="Timer must be between 5 and 300 seconds.")
+
+    ROOM.draft.config.seconds_per_pick = new_seconds
+
+    if ROOM.draft.started and not ROOM.draft.completed:
+        ROOM.draft.deadline_ts = time.time() + new_seconds
+
+    state_out = serialize_room_state()
+    await broadcast({"type": "room_state", "data": state_out})
+    return state_out
 
 
 @app.get("/api/draft/eligible-slots/{athlete_id}")
