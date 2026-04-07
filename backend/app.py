@@ -127,7 +127,6 @@ NON_PGA_TOUR = {
     "sergio-garcia",
     "tyrrell-hatton",
     "dustin-johnson",
-    "brooks-koepka",
     "tom-mckibbin",
     "carlos-ortiz",
     "jon-rahm",

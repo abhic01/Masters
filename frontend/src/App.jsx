@@ -31,7 +31,6 @@ function getCategoryTags(player) {
   if (player?.isInternational) tags.push("International");
   if (player?.isAmerican) tags.push("American");
   if (player?.isNonPga) tags.push("Non-PGA");
-  tags.push("Wildcard");
   return tags;
 }
 
