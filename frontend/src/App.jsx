@@ -31,6 +31,7 @@ function getCategoryTags(player) {
   if (player.isInternational) tags.push("International");
   if (player.isAmerican) tags.push("American");
   if (player.isNonPga) tags.push("Non-PGA");
+  tags.push("Wildcard");
   return tags;
 }
 
@@ -49,12 +50,15 @@ export default function App() {
   const [error, setError] = useState("");
   const [tournamentLeaderboard, setTournamentLeaderboard] = useState([]);
   const [timerInput, setTimerInput] = useState(60);
+  const [viewMode, setViewMode] = useState("auto"); // auto | dashboard | draft
+
+  const draft = room?.draft;
 
   useEffect(() => {
     if (draft?.secondsPerPick) {
       setTimerInput(draft.secondsPerPick);
     }
-  }, [room?.draft?.secondsPerPick]);
+  }, [draft?.secondsPerPick]);
 
   useEffect(() => {
     if (!joined) return;
@@ -103,7 +107,6 @@ export default function App() {
     return users.find((u) => u.userId === userId) || null;
   }, [room, userId]);
 
-  const draft = room?.draft;
   const slotLabels = room?.slotLabels || {};
   const picked = useMemo(() => new Set(draft?.picked || []), [draft]);
   const myRoster = me ? draft?.rosters?.[me.name]?.slots || {} : {};
@@ -126,12 +129,16 @@ export default function App() {
         teamName,
         total: data.total || 0,
         players: data.players || [],
+        missedStarterSlots: data.missedStarterSlots || [],
       }))
       .sort((a, b) => b.total - a.total);
   }, [scoreboard]);
 
   const onClock = draft?.currentTeam;
   const isMyTurn = !!me && draft?.started && !draft?.completed && onClock === me.name;
+
+  const autoView = draft?.started && !draft?.completed ? "draft" : "dashboard";
+  const activeView = viewMode === "auto" ? autoView : viewMode;
 
   async function doJoin() {
     setError("");
@@ -216,12 +223,246 @@ export default function App() {
     setHoleModal({ athleteId, name: playerName, ...data });
   }
 
+  function renderMyTeamCard() {
+    return (
+      <section className="card rosterCard">
+        <div className="teamHeader">
+          <h2 className="h2">My Team</h2>
+          <div className="total">Total: {myTeam?.total ?? 0}</div>
+        </div>
+        <div className="list rosterList">
+          {Object.entries(slotLabels).map(([slot, label]) => {
+            const player = myRoster?.[slot];
+            const scoreRow = (myTeam?.players || []).find((p) => p.slot === slot);
+            const isStarter = (draft?.starterSlots || []).includes(slot);
+
+            return (
+              <div className="row rosterRow" key={slot}>
+                <div>
+                  <div className="name">{label}</div>
+                  {player ? (
+                    <>
+                      <div className="clickableName" onClick={() => openHoles(player.athleteId, player.name)}>
+                        {player.name}
+                      </div>
+                      <div className="meta">
+                        {scoreRow?.status === "missed_cut"
+                          ? "Missed cut"
+                          : scoreRow?.status === "active_backup"
+                          ? "Active backup"
+                          : isStarter
+                          ? "Starter"
+                          : "Backup"}
+                        {typeof scoreRow?.madeCut === "boolean"
+                          ? ` • ${scoreRow.madeCut ? "Made cut" : "Missed cut"}`
+                          : ""}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="meta">Empty</div>
+                  )}
+                </div>
+                <div className="pts">{scoreRow?.fantasyPoints ?? 0}</div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
+  function renderDashboardView() {
+    return (
+      <>
+        <div className="layout threeCol">
+          <section className="card">
+            <div className="sectionHeader">
+              <h2 className="h2">League Standings</h2>
+              <div className="pill">{draft?.completed ? "Final rosters locked" : draft?.started ? "Draft in progress" : "Pre-draft"}</div>
+            </div>
+
+            <div className="list">
+              {leagueStandings.map((team, idx) => (
+                <div className="row" key={team.teamName}>
+                  <div>
+                    <div className="name">#{idx + 1} {team.teamName}</div>
+                    <div className="meta">
+                      {team.players
+                        .filter((p) => p.name)
+                        .map((p) => `${p.slotLabel}: ${p.name}`)
+                        .join(" • ")}
+                    </div>
+                  </div>
+                  <div className="pts">{team.total}</div>
+                </div>
+              ))}
+              {leagueStandings.length === 0 && <div className="empty">No standings yet.</div>}
+            </div>
+          </section>
+
+          {renderMyTeamCard()}
+
+          <section className="card">
+            <h2 className="h2">Tournament Leaderboard</h2>
+            <div className="list">
+              {tournamentLeaderboard.slice(0, 25).map((player, idx) => (
+                <div className="row" key={`${player.golfer_name}-${idx}`}>
+                  <div>
+                    <div className="name">#{idx + 1} {player.golfer_name}</div>
+                    <div className="meta">Base: {player.base_points} • Bonus: {player.bonus_points}</div>
+                  </div>
+                  <div className="pts">{player.fantasy_points}</div>
+                </div>
+              ))}
+              {tournamentLeaderboard.length === 0 && <div className="empty">Leaderboard unavailable.</div>}
+            </div>
+          </section>
+        </div>
+
+        <section className="card picksCard">
+          <h2 className="h2">All Team Rosters</h2>
+          <div className="picks">
+            {leagueStandings.map((team) => (
+              <div className="pick" key={team.teamName} style={{ display: "block" }}>
+                <div className="pickName" style={{ marginBottom: 8 }}>{team.teamName}</div>
+                <div className="pickMeta" style={{ marginBottom: 8 }}>Total: {team.total}</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {team.players.map((p) => (
+                    <div key={`${team.teamName}-${p.slot}`} style={{ borderTop: "1px solid var(--border)", paddingTop: 8 }}>
+                      <div className="name" style={{ fontSize: 13 }}>{p.slotLabel}</div>
+                      <div className="meta">
+                        {p.name || "Empty"}
+                        {p.name ? ` • ${p.fantasyPoints ?? 0} pts` : ""}
+                        {p.status === "missed_cut" ? " • Missed cut" : ""}
+                        {p.status === "active_backup" ? " • Active backup" : ""}
+                        {p.status === "bench" ? " • Bench" : ""}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {leagueStandings.length === 0 && <div className="empty">No teams yet.</div>}
+          </div>
+        </section>
+      </>
+    );
+  }
+
+  function renderDraftView() {
+    return (
+      <>
+        <div className="layout threeCol">
+          <section className="card">
+            <h2 className="h2">Players in Lobby</h2>
+            <div className="list lobbyList">
+              {(room?.users || []).map((u) => (
+                <div className="row" key={u.userId}>
+                  <div className="name">
+                    {u.name} {u.isHost ? <span className="pillHost">HOST</span> : null}
+                  </div>
+                </div>
+              ))}
+              {(room?.users || []).length === 0 && <div className="empty">No one yet.</div>}
+            </div>
+
+            <div className="sectionHeader">
+              <h2 className="h2">Available (Top 50)</h2>
+              <div className="pill">{draft?.started ? (isMyTurn ? "Your turn" : `Waiting: ${onClock}`) : "Waiting for host"}</div>
+            </div>
+
+            <input className="input" placeholder="Search..." value={query} onChange={(e) => setQuery(e.target.value)} />
+
+            <div className="list">
+              {available.map((p) => (
+                <div
+                  className={`row ${isMyTurn ? "clickable" : ""}`}
+                  key={p.athleteId}
+                  onClick={() => isMyTurn && draftPlayer(p)}
+                  title={isMyTurn ? "Click to draft" : "Not your turn"}
+                >
+                  <div>
+                    <div className="name">{p.name}</div>
+                    <div className="tagRow">
+                      {getCategoryTags(p).map((tag) => (
+                        <span key={tag} className="categoryTag">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="pill">{isMyTurn ? "Draft" : "—"}</div>
+                </div>
+              ))}
+              {available.length === 0 && <div className="empty">No available players.</div>}
+            </div>
+          </section>
+
+          {renderMyTeamCard()}
+
+          <section className="teams">
+            <div className="card">
+              <h2>League Standings</h2>
+              <div className="list">
+                {leagueStandings.map((team, idx) => (
+                  <div className="row" key={team.teamName}>
+                    <div>
+                      <div className="name">#{idx + 1} {team.teamName}</div>
+                      <div className="meta">
+                        {team.players
+                          .filter((p) => p.name)
+                          .map((p) => `${p.slotLabel}: ${p.name}`)
+                          .join(" • ")}
+                      </div>
+                    </div>
+                    <div className="pts">{team.total}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="card">
+              <h2>Tournament Leaderboard</h2>
+              <div className="list">
+                {tournamentLeaderboard.slice(0, 25).map((player, idx) => (
+                  <div className="row" key={`${player.golfer_name}-${idx}`}>
+                    <div>
+                      <div className="name">#{idx + 1} {player.golfer_name}</div>
+                      <div className="meta">Base: {player.base_points} • Bonus: {player.bonus_points}</div>
+                    </div>
+                    <div className="pts">{player.fantasy_points}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <section className="card picksCard">
+          <h2 className="h2">Pick History</h2>
+          <div className="picks">
+            {(draft?.picks || []).map((p) => (
+              <div className="pick" key={`${p.pickNo}-${p.athleteId}`}>
+                <div className="pickNo">#{p.pickNo}</div>
+                <div className="pickBody">
+                  <div className="pickName">{p.name}</div>
+                  <div className="pickMeta">{p.team} • {p.slotLabel}</div>
+                </div>
+              </div>
+            ))}
+            {(draft?.picks || []).length === 0 && <div className="empty">No picks yet.</div>}
+          </div>
+        </section>
+      </>
+    );
+  }
+
   if (!joined) {
     return (
       <div className="page">
         <div className="card" style={{ maxWidth: 520, margin: "80px auto" }}>
           <h1 style={{ marginTop: 0 }}>Join the Draft</h1>
-          <p className="muted">Enter your name to enter the lobby. The host will start the draft.</p>
+          <p className="muted">Enter your name to enter the lobby.</p>
           <input
             className="input"
             placeholder="Your name"
@@ -253,14 +494,24 @@ export default function App() {
               ? draft.completed
                 ? "Draft complete"
                 : `On the clock: ${draft.currentTeam} • Pick ${draft.pickNo}/${draft.totalPicks} • ${draft.secondsLeft}s`
-              : "Lobby (draft not started)"}
+              : "Draft not started"}
           </div>
         </div>
 
         <div className="actions">
+          <button className="btn" onClick={() => setViewMode("dashboard")}>
+            Standings
+          </button>
+          <button className="btn" onClick={() => setViewMode("draft")}>
+            Draft Room
+          </button>
+          <button className="btn" onClick={() => setViewMode("auto")}>
+            Auto View
+          </button>
+
           {me?.isHost && !draft?.started && (
             <button className="btn primary" onClick={startDraft}>
-              Start Draft (Randomize Order)
+              Start Draft
             </button>
           )}
 
@@ -284,137 +535,7 @@ export default function App() {
 
       {error && <div className="error" style={{ marginBottom: 10 }}>{error}</div>}
 
-      <div className="layout threeCol">
-        <section className="card">
-          <h2 className="h2">Players in Lobby</h2>
-          <div className="list lobbyList">
-            {(room?.users || []).map((u) => (
-              <div className="row" key={u.userId}>
-                <div className="name">{u.name} {u.isHost ? <span className="pillHost">HOST</span> : null}</div>
-              </div>
-            ))}
-            {(room?.users || []).length === 0 && <div className="empty">No one yet.</div>}
-          </div>
-
-          <div className="sectionHeader">
-            <h2 className="h2">Available (Top 50)</h2>
-            <div className="pill">{draft?.started ? (isMyTurn ? "Your turn" : `Waiting: ${onClock}`) : "Waiting for host"}</div>
-          </div>
-
-          <input className="input" placeholder="Search..." value={query} onChange={(e) => setQuery(e.target.value)} />
-
-          <div className="list">
-            {available.map((p) => (
-              <div
-                className={`row ${isMyTurn ? "clickable" : ""}`}
-                key={p.athleteId}
-                onClick={() => isMyTurn && draftPlayer(p)}
-                title={isMyTurn ? "Click to draft" : "Not your turn"}
-              >
-                <div>
-                  <div className="name">{p.name}</div>
-                  <div className="tagRow">
-                    {getCategoryTags(p).map((tag) => (
-                      <span key={tag} className="categoryTag">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="pill">{isMyTurn ? "Draft" : "—"}</div>
-              </div>
-            ))}
-            {available.length === 0 && <div className="empty">No available players.</div>}
-          </div>
-        </section>
-
-        <section className="card rosterCard">
-          <div className="teamHeader">
-            <h2 className="h2">My Roster</h2>
-            <div className="total">Total: {myTeam?.total ?? 0}</div>
-          </div>
-          <div className="list rosterList">
-            {Object.entries(slotLabels).map(([slot, label]) => {
-              const player = myRoster?.[slot];
-              const scoreRow = (myTeam?.players || []).find((p) => p.slot === slot);
-              const isStarter = (draft?.starterSlots || []).includes(slot);
-              return (
-                <div className="row rosterRow" key={slot}>
-                  <div>
-                    <div className="name">{label}</div>
-                    {player ? (
-                      <>
-                        <div className="clickableName" onClick={() => openHoles(player.athleteId, player.name)}>{player.name}</div>
-                        <div className="meta">
-                          {scoreRow?.status === "missed_cut"
-                            ? "Missed cut"
-                            : scoreRow?.status === "active_backup"
-                            ? "Active backup"
-                            : isStarter
-                            ? "Starter"
-                            : "Backup"}
-                          {typeof scoreRow?.madeCut === "boolean" ? ` • ${scoreRow.madeCut ? "Made cut" : "Missed cut"}` : ""}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="meta">Empty</div>
-                    )}
-                  </div>
-                  <div className="pts">{scoreRow?.fantasyPoints ?? 0}</div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="teams">
-          <div className="card">
-            <h2>League Standings</h2>
-            <div className="list">
-              {leagueStandings.map((team, idx) => (
-                <div className="row" key={team.teamName}>
-                  <div>
-                    <div className="name">#{idx + 1} {team.teamName}</div>
-                    <div className="meta">{team.players.filter((p) => p.name).map((p) => `${p.slotLabel}: ${p.name}`).join(" • ")}</div>
-                  </div>
-                  <div className="pts">{team.total}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="card">
-            <h2>Tournament Leaderboard</h2>
-            <div className="list">
-              {tournamentLeaderboard.slice(0, 25).map((player, idx) => (
-                <div className="row" key={`${player.golfer_name}-${idx}`}>
-                  <div>
-                    <div className="name">#{idx + 1} {player.golfer_name}</div>
-                    <div className="meta">Base: {player.base_points} • Bonus: {player.bonus_points}</div>
-                  </div>
-                  <div className="pts">{player.fantasy_points}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <section className="card picksCard">
-        <h2 className="h2">Pick History</h2>
-        <div className="picks">
-          {(draft?.picks || []).map((p) => (
-            <div className="pick" key={`${p.pickNo}-${p.athleteId}`}>
-              <div className="pickNo">#{p.pickNo}</div>
-              <div className="pickBody">
-                <div className="pickName">{p.name}</div>
-                <div className="pickMeta">{p.team} • {p.slotLabel}</div>
-              </div>
-            </div>
-          ))}
-          {(draft?.picks || []).length === 0 && <div className="empty">No picks yet.</div>}
-        </div>
-      </section>
+      {activeView === "draft" ? renderDraftView() : renderDashboardView()}
 
       {slotModal && (
         <div className="modalBackdrop" onClick={() => setSlotModal(null)}>
@@ -433,6 +554,7 @@ export default function App() {
               </div>
               <button className="btn" onClick={() => setSlotModal(null)}>Close</button>
             </div>
+
             <div className="slotChoices">
               {slotModal.slots.map((slot) => (
                 <button key={slot} className="btn slotBtn" onClick={() => chooseSlot(slot)}>
@@ -454,6 +576,7 @@ export default function App() {
               </div>
               <button className="btn" onClick={() => setHoleModal(null)}>Close</button>
             </div>
+
             <div className="holes">
               {(holeModal.holes || []).map((h) => (
                 <div className="holeRow" key={`${h.round}-${h.hole}`}>
@@ -465,7 +588,9 @@ export default function App() {
                   <div className="pts">{h.points}</div>
                 </div>
               ))}
-              {(holeModal.holes || []).length === 0 && <div className="empty">Hole-by-hole provider is currently stubbed.</div>}
+              {(holeModal.holes || []).length === 0 && (
+                <div className="empty">Hole-by-hole provider is currently stubbed.</div>
+              )}
             </div>
           </div>
         </div>
