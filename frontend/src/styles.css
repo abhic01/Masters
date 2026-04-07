@@ -474,6 +474,50 @@ body {
   color: var(--accent-strong);
   background: var(--accent-soft);
 }
+.neededFilterChip {
+  border-color: rgba(180, 35, 24, 0.38);
+  background: linear-gradient(180deg, #fff6f4 0%, #fde7e4 100%);
+  color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.08);
+}
+
+.neededFilterChip.active {
+  border-color: rgba(180, 35, 24, 0.58);
+  background: linear-gradient(180deg, #ffe9e5 0%, #f7d2cc 100%);
+  color: #8f1c13;
+  box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.12);
+}
+
+.filterNeedBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(180, 35, 24, 0.12);
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.neededFiltersHint {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(180, 35, 24, 0.22);
+  background: linear-gradient(180deg, #fff6f4 0%, #fde7e4 100%);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.neededFiltersHintComplete {
+  border-color: rgba(31, 107, 67, 0.2);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
 
 .scoreBreakdown {
   display: flex;

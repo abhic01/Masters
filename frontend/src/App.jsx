@@ -31,7 +31,6 @@ function getCategoryTags(player) {
   if (player?.isInternational) tags.push("International");
   if (player?.isAmerican) tags.push("American");
   if (player?.isNonPga) tags.push("Non-PGA");
-  tags.push("Wildcard");
   return tags;
 }
 
@@ -43,6 +42,21 @@ function playerMatchesFilter(player, filter) {
   if (filter === "non_pga") return !!player?.isNonPga;
   return true;
 }
+
+const FILTER_TO_SLOT = {
+  past_champion: "past_champion",
+  international: "international",
+  american: "american",
+  non_pga: "non_pga",
+};
+
+const FILTER_LABELS = {
+  all: "All",
+  past_champion: "Past Champion",
+  international: "International",
+  american: "American",
+  non_pga: "Non-PGA",
+};
 
 function ScoreBreakdown({ basePoints = 0, bonusPoints = 0, placementBonus = 0, onOpenBreakdown }) {
   const hasPlacement = Number(placementBonus) !== 0;
@@ -322,6 +336,12 @@ export default function App() {
   const slotLabels = safeObject(room?.slotLabels);
   const picked = useMemo(() => new Set(Array.isArray(draft?.picked) ? draft.picked : []), [draft]);
   const myRoster = me ? safeObject(draft?.rosters?.[me.name]?.slots) : {};
+  const neededFilters = useMemo(() => {
+    const starterSlots = Array.isArray(draft?.starterSlots) ? draft.starterSlots : [];
+    return starterSlots
+      .filter((slot) => !myRoster?.[slot] && FILTER_TO_SLOT[slot])
+      .map((slot) => slot);
+  }, [draft?.starterSlots, myRoster]);
   const myTeam = useMemo(() => {
     if (!me || !scoreboard?.teams) return null;
     return scoreboard.teams[me.name] || null;
@@ -717,12 +737,30 @@ export default function App() {
             <input className="input" placeholder="Search..." value={query} onChange={(e) => setQuery(e.target.value)} />
 
             <div className="filterRow">
-              <button className={`filterChip ${categoryFilter === "all" ? "active" : ""}`} onClick={() => setCategoryFilter("all")}>All</button>
-              <button className={`filterChip ${categoryFilter === "past_champion" ? "active" : ""}`} onClick={() => setCategoryFilter("past_champion")}>Past Champion</button>
-              <button className={`filterChip ${categoryFilter === "international" ? "active" : ""}`} onClick={() => setCategoryFilter("international")}>International</button>
-              <button className={`filterChip ${categoryFilter === "american" ? "active" : ""}`} onClick={() => setCategoryFilter("american")}>American</button>
-              <button className={`filterChip ${categoryFilter === "non_pga" ? "active" : ""}`} onClick={() => setCategoryFilter("non_pga")}>Non-PGA</button>
+              {Object.entries(FILTER_LABELS).map(([filterKey, filterLabel]) => {
+                const isNeeded = neededFilters.includes(filterKey);
+                return (
+                  <button
+                    key={filterKey}
+                    className={`filterChip ${categoryFilter === filterKey ? "active" : ""} ${isNeeded ? "neededFilterChip" : ""}`}
+                    onClick={() => setCategoryFilter(filterKey)}
+                  >
+                    <span>{filterLabel}</span>
+                    {isNeeded ? <span className="filterNeedBadge">Needed</span> : null}
+                  </button>
+                );
+              })}
             </div>
+
+            {neededFilters.length ? (
+              <div className="neededFiltersHint">
+                Still need: {neededFilters.map((filterKey) => FILTER_LABELS[filterKey]).join(", ")}
+              </div>
+            ) : (
+              <div className="neededFiltersHint neededFiltersHintComplete">
+                All required starter categories are filled. You can draft any remaining backups.
+              </div>
+            )}
 
             <div className="list">
               {available.map((p) => (
@@ -739,7 +777,6 @@ export default function App() {
                         <span key={tag} className="categoryTag">{tag}</span>
                       ))}
                     </div>
-                    {p?.oddsRank != null ? <div className="meta">Auto draft rank: #{p.oddsRank + 1}</div> : null}
                   </div>
                   <div className="pill">{isMyTurn ? "Draft" : `#${(p?.oddsRank ?? 998) + 1}`}</div>
                 </div>
