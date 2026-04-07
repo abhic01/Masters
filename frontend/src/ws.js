@@ -1,4 +1,6 @@
-const WS_URL = `ws://${window.location.hostname}:8000/ws`;
+const WS_URL =
+  import.meta.env.VITE_WS_BASE_URL ||
+  `ws://${window.location.hostname}:8000/ws`;
 
 export function connectWS(userId, onMessage) {
   const ws = new WebSocket(`${WS_URL}?userId=${encodeURIComponent(userId)}`);

@@ -1,4 +1,6 @@
-const API = `http://${window.location.hostname}:8000/api`;
+const API =
+  import.meta.env.VITE_API_BASE_URL ||
+  `http://${window.location.hostname}:8000/api`;
 
 async function jget(path) {
   const res = await fetch(`${API}${path}`);
