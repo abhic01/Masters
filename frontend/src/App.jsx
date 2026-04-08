@@ -962,16 +962,6 @@ export default function App() {
             <li>That keeps strong drafting valuable while still preserving comeback paths through backup coverage.</li>
           </ul>
         </section>
-
-        <section className="card rulesSection">
-          <h3 className="rulesSectionTitle">Player categories</h3>
-          <ul className="rulesList">
-            <li>Category labels come from the official Masters player listing and the current category rules used by this pool.</li>
-            <li>Patrick Reed is treated as American.</li>
-            <li>The filter chips in the draft room turn red when a required starter category is still empty on your roster.</li>
-            <li>Once all 5 starter categories are filled, the backups are effectively unlocked.</li>
-          </ul>
-        </section>
       </div>
     );
   }
@@ -1079,10 +1069,6 @@ export default function App() {
                         ))}
                       </div>
                     </div>
-                  </div>
-                  <div className="playerCardRight">
-                    <div className="meta">Rank #{getPlayerRank(p) || "—"}</div>
-                    <div className="pill">{isMyTurn ? "Draft" : "View"}</div>
                   </div>
                 </div>
               ))}
