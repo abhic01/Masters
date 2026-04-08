@@ -366,6 +366,15 @@ export default function App() {
   const suggestionTeamName = draft?.started && !draft?.completed ? draft?.currentTeam : me?.name;
   const suggestionRoster = safeObject(draft?.rosters?.[suggestionTeamName]?.slots);
   const suggestionNeededStarterSlots = starterSlots.filter((slot) => !suggestionRoster?.[slot]);
+
+  const available = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (Array.isArray(field) ? field : [])
+      .filter((p) => !picked.has(p.athleteId))
+      .filter((p) => playerMatchesFilter(p, categoryFilter))
+      .filter((p) => (q ? (p?.name || "").toLowerCase().includes(q) : true));
+  }, [field, picked, query, categoryFilter]);
+
   const bestAvailable = useMemo(() => {
     const sorted = [...available].sort((a, b) => (a?.oddsRank || 9999) - (b?.oddsRank || 9999));
     if (!suggestionTeamName) return sorted.slice(0, 6);
@@ -388,14 +397,6 @@ export default function App() {
     }
     return preferred.slice(0, 6);
   }, [available, suggestionNeededStarterSlots, suggestionTeamName]);
-
-  const available = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return (Array.isArray(field) ? field : [])
-      .filter((p) => !picked.has(p.athleteId))
-      .filter((p) => playerMatchesFilter(p, categoryFilter))
-      .filter((p) => (q ? (p?.name || "").toLowerCase().includes(q) : true));
-  }, [field, picked, query, categoryFilter]);
 
   const leagueStandings = useMemo(() => {
     const teamsObj = safeObject(scoreboard?.teams);
