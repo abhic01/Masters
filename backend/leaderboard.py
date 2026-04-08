@@ -584,7 +584,7 @@ def build_team_scoreboard(
 
             if is_backup:
                 rounds_to_use = [3, 4] if is_active_backup else []
-                placement_points = sc.placement_bonus if is_active_backup else 0.0
+                placement_points = 0.0
                 status = "active_backup" if is_active_backup else "bench"
             else:
                 rounds_to_use = [1, 2, 3, 4] if sc.made_cut is True else ([1, 2] if sc.made_cut is False else [1, 2])
