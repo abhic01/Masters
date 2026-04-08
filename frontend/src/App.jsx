@@ -947,7 +947,7 @@ export default function App() {
           <ul className="rulesList">
             <li>Starters always score rounds 1 and 2.</li>
             <li>If a starter misses the cut, that starter keeps only rounds 1 and 2 plus any bonuses earned before the cut.</li>
-            <li>Backups do not score by default.</li>
+            <li>Backups do not score by default and do not get a placement bonus.</li>
             <li>If a starter misses the cut, an eligible backup can become active for weekend scoring and contribute rounds 3 and 4 instead.</li>
             <li>Backups can still help a team win, but they do not erase the early-round loss from a missed-cut starter.</li>
           </ul>
