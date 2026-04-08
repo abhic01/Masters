@@ -31,7 +31,6 @@ function getCategoryTags(player) {
   if (player?.isInternational) tags.push("International");
   if (player?.isAmerican) tags.push("American");
   if (player?.isNonPga) tags.push("Non-PGA");
-  tags.push("Wildcard");
   return tags;
 }
 
@@ -49,7 +48,6 @@ function playerQualifiesForSlot(player, slot) {
   if (slot === "international") return !!player?.isInternational;
   if (slot === "american") return !!player?.isAmerican;
   if (slot === "non_pga") return !!player?.isNonPga;
-  if (slot === "wildcard") return true;
   return false;
 }
 
@@ -366,7 +364,6 @@ export default function App() {
   const suggestionTeamName = draft?.started && !draft?.completed ? draft?.currentTeam : me?.name;
   const suggestionRoster = safeObject(draft?.rosters?.[suggestionTeamName]?.slots);
   const suggestionNeededStarterSlots = starterSlots.filter((slot) => !suggestionRoster?.[slot]);
-
   const available = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (Array.isArray(field) ? field : [])
@@ -376,7 +373,7 @@ export default function App() {
   }, [field, picked, query, categoryFilter]);
 
   const bestAvailable = useMemo(() => {
-    const sorted = [...available].sort((a, b) => (a?.oddsRank || 9999) - (b?.oddsRank || 9999));
+    const sorted = [...available].sort((a, b) => (a?.rank || 9999) - (b?.rank || 9999));
     if (!suggestionTeamName) return sorted.slice(0, 6);
 
     const preferred = [];
@@ -392,7 +389,7 @@ export default function App() {
     for (const player of sorted) {
       if (preferred.length >= 6) break;
       if (seen.has(player.athleteId)) continue;
-      preferred.push({ ...player, suggestedSlot: suggestionNeededStarterSlots[0] || "wildcard" });
+      preferred.push({ ...player, suggestedSlot: suggestionNeededStarterSlots[0] || null });
       seen.add(player.athleteId);
     }
     return preferred.slice(0, 6);
@@ -798,7 +795,7 @@ export default function App() {
             <li>You must fill all 5 starter categories before Backup 1 or Backup 2 can be selected.</li>
             <li>No golfer can be drafted by more than one team.</li>
             <li>If a player qualifies for multiple starter categories, the drafter must choose which open slot to place them in.</li>
-            <li>Auto draft uses the odds board and fills the highest-priority valid open slot for that roster.</li>
+            <li>Auto draft uses player rank and fills the highest-priority valid open slot for that roster.</li>
             <li>The current team on the clock is marked on the draft board and in the lobby panel.</li>
           </ul>
         </section>
@@ -944,7 +941,7 @@ export default function App() {
             <div className="sectionHeader">
               <div>
                 <h2 className="h2">Available Players</h2>
-                <div className="meta">Odds rank and category tags are shown to speed up picks.</div>
+                <div className="meta">Player rank and category tags are shown to speed up picks.</div>
               </div>
               <div className="draftControls">
                 <div className="pill">
@@ -995,7 +992,7 @@ export default function App() {
                     <div>
                       <div className="playerNameRow">
                         <div className="name">{p.name}</div>
-                        <span className="oddsBadge">{p.oddsLabel || `#${p.oddsRank || "—"}`}</span>
+                        <span className="oddsBadge">#{p.rank || "—"}</span>
                       </div>
                       <div className="tagRow">
                         {getCategoryTags(p).map((tag) => (
@@ -1005,7 +1002,7 @@ export default function App() {
                     </div>
                   </div>
                   <div className="playerCardRight">
-                    <div className="meta">Rank #{p.oddsRank || "—"}</div>
+                    <div className="meta">Rank #{p.rank || "—"}</div>
                     <div className="pill">{isMyTurn ? "Draft" : "View"}</div>
                   </div>
                 </div>
@@ -1026,9 +1023,9 @@ export default function App() {
                     <div className="bestAvailableBody">
                       <div className="bestAvailableTop">
                         <span className="name">{player.name}</span>
-                        <span className="oddsBadge">{player.oddsLabel || `#${player.oddsRank}`}</span>
+                        <span className="oddsBadge">#{player.rank || "—"}</span>
                       </div>
-                      <div className="meta">Best fit: {slotLabels[player.suggestedSlot] || "Wildcard"}</div>
+                      <div className="meta">Best fit: {player.suggestedSlot ? (slotLabels[player.suggestedSlot] || player.suggestedSlot) : "Best available overall"}</div>
                     </div>
                   </button>
                 ))}
