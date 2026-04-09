@@ -559,9 +559,15 @@ export default function App() {
     }
     localStorage.setItem("masters_name", nm);
     try {
-      await api.join(userId, nm);
+      const nextRoom = await api.join(userId, nm);
+      if (nextRoom) setRoom(nextRoom);
+      const nextMe = Array.isArray(nextRoom?.users) ? nextRoom.users.find((u) => u.userId === userId) : null;
       setJoined(true);
-      setSpectatorMode(false);
+      setSpectatorMode(Boolean(nextMe?.spectator));
+      if (nextMe?.name) {
+        setName(nextMe.name);
+        localStorage.setItem("masters_name", nextMe.name);
+      }
     } catch (e) {
       setError(e.message);
     }
