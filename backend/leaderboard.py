@@ -172,7 +172,7 @@ def placement_bonus(rank: int) -> float:
 
 
 def parse_position_value(raw_golfer: dict) -> Optional[int]:
-    for key in ("position", "pos", "rank"):
+    for key in ("position", "pos", "rank", "finishing_position", "order"):
         value = raw_golfer.get(key)
         if value is None:
             continue
@@ -429,28 +429,35 @@ def all_positions_final(golfers: List[dict]) -> bool:
     if not golfers:
         return False
 
-    finished_count = 0
     for g in golfers:
         cut_status = infer_made_cut(g)
-        status = (
-            (g.get("status") or {}).get("type", {})
-            if isinstance(g.get("status"), dict)
-            else {}
-        )
+        status = (g.get("status") or {}).get("type", {}) if isinstance(g.get("status"), dict) else {}
         state = str(status.get("state") or "").lower()
+        status_name = str(status.get("name") or "").lower()
+        detail = str(status.get("detail") or "").lower()
         rounds = g.get("rounds") or []
-        rounds_completed = sum(
-            1 for rnd in rounds if any(h.get("strokes") is not None for h in rnd)
-        )
+        rounds_completed = sum(1 for rnd in rounds if any(h.get("strokes") is not None for h in rnd))
+        position_value = parse_position_value(g)
 
-        if (
-            state in {"post", "complete"}
+        # Any actively-playing golfer means the tournament is not final yet.
+        if state in {"in", "live", "playing", "progress"}:
+            return False
+
+        # These cases are final enough to allow placement bonuses.
+        is_finalized = (
+            state in {"post", "complete", "final"}
             or rounds_completed >= 4
             or cut_status is False
-        ):
-            finished_count += 1
+            or position_value is not None
+            or status_name in {"wd", "dq", "withdrawn", "disqualified"}
+            or "withdraw" in detail
+            or "disqual" in detail
+        )
 
-    return finished_count == len(golfers)
+        if not is_finalized:
+            return False
+
+    return True
 
 
 def aggregate_breakdowns_for_rounds(
