@@ -33,6 +33,33 @@ In this mode, users can:
 - inspect hole-by-hole fantasy scoring for drafted players
 
 ---
+## App Screenshots
+
+### Draft Board
+![Draft Room](./screenshots/draft.png)
+
+### Live League Leaderboard
+![Leaderboard](./screenshots/leaderboards.png)
+
+### Live Tournament Leaderboard
+![Leaderboard](./screenshots/tournamentLeaderboard.png)
+
+### Team Roster
+![Roster](./screenshots/team1.png)
+
+![Roster](./screenshots/team2.png)
+
+
+
+### Rules and Scoring Breakdown
+![Scoring](./screenshots/rules.png)
+
+![Scoring](./screenshots/scoringByHole.png)
+
+![Scoring](./screenshots/FinishingBonus.png)
+
+
+---
 
 ## Core Features
 
